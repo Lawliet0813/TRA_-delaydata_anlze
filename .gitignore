@@ -1,0 +1,27 @@
+# 環境與金鑰（絕對不能上傳）
+.env
+*.env
+
+# Python 虛擬環境
+venv/
+__pycache__/
+*.pyc
+*.pyo
+
+# 資料目錄（原始資料量大，不納入版控）
+data/live_board/
+data/timetable/
+data/alerts/
+data/static/stations.json
+data/processed_data.csv
+data/research_dataset.csv
+
+# macOS
+.DS_Store
+**/.DS_Store
+
+# Streamlit
+.streamlit/
+
+# logs
+*.log
