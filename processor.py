@@ -5,6 +5,14 @@ import pandas as pd
 import numpy as np
 from datetime import datetime, date
 
+# ── 雲端模式偵測 ──────────────────────────────────────────────
+# 若環境變數 STREAMLIT_CLOUD=1，則從 GitHub raw 讀取 CSV
+CLOUD_MODE = os.environ.get("STREAMLIT_CLOUD", "0") == "1"
+GITHUB_RAW_BASE = os.environ.get(
+    "GITHUB_RAW_BASE",
+    "https://raw.githubusercontent.com/Lawliet0813/TRA_-delaydata_anlze/main/data"
+)
+
 # ══════════════════════════════════════════════════════════════
 #  常數定義
 # ══════════════════════════════════════════════════════════════
@@ -196,7 +204,17 @@ class DataProcessor:
     # ── 全台原始資料（儀表板用）────────────────────────────────
 
     def parse_live_board(self, date_str=None):
-        """讀取全台 live_board，回傳基本清理後的 DataFrame（供儀表板總覽用）"""
+        """讀取全台 live_board，回傳基本清理後的 DataFrame（供儀表板總覽用）
+        雲端模式：直接讀 GitHub raw CSV，不解析 JSON。
+        """
+        if CLOUD_MODE or not os.path.exists(self.data_dir):
+            url = f"{GITHUB_RAW_BASE}/processed_data.csv"
+            try:
+                df = pd.read_csv(url)
+                return df
+            except Exception as e:
+                return pd.DataFrame()
+
         pattern = os.path.join(self.data_dir, "live_board",
                                date_str if date_str else "*", "*.json")
         files = glob.glob(pattern)
@@ -268,18 +286,20 @@ class DataProcessor:
         """
         建構全台研究用資料集，對應 Notion 研究設計：
         Y₁ IsDelayed（0/1）、Y₂ DelayTime（連續）
-        X₁ 誤點原因（Alert 另處理）
-        X₂ TrainType（車種簡化）
-        X₃ Period（時段）
-        X₄ Weekday（星期）
-        X₅ Month（月份）
-        X₆ StationGrade（站等級，需靜態表）
-        X₇ SideTrackCount（側線數，需靜態表）
-        X₈ IsDouble（單複線，需靜態表）
-        X₉ MixIndex（車種混合度，由時刻表計算）
-        X₁₀ SpeedDiff（速差指標，由時刻表計算）
-        + StopSeq、PrevDelay（前站誤點）
+        ...
+        雲端模式：直接讀 GitHub raw research_dataset.csv。
         """
+        if CLOUD_MODE or not os.path.exists(self.data_dir):
+            # 先嘗試 research_dataset，fallback 到 processed_data
+            for fname in ["research_dataset.csv", "processed_data.csv"]:
+                url = f"{GITHUB_RAW_BASE}/{fname}"
+                try:
+                    df = pd.read_csv(url)
+                    if not df.empty:
+                        return df
+                except Exception:
+                    pass
+            return pd.DataFrame()
         pattern = os.path.join(self.data_dir, "live_board",
                                date_str if date_str else "*", "*.json")
         files = glob.glob(pattern)

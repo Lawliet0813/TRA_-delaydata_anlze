@@ -13,15 +13,12 @@ data/live_board/
 data/timetable/
 data/alerts/
 data/static/stations.json
-data/processed_data.csv
 data/research_dataset.csv
+# processed_data.csv 納入版控（供 Streamlit Cloud 讀取）
 
 # macOS
 .DS_Store
 **/.DS_Store
-
-# Streamlit
-.streamlit/
 
 # logs
 *.log

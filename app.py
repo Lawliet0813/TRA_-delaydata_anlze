@@ -4,12 +4,15 @@ import numpy as np
 import os
 import glob
 from datetime import datetime
+import os
 from config import CLIENT_ID, CLIENT_SECRET, DATA_DIR
-from crawlers.live_board import crawl_live_board
-from crawlers.alert import crawl_alerts
-from crawlers.timetable import crawl_timetable
-from crawlers.station import crawl_stations
-from processor import DataProcessor
+from processor import DataProcessor, CLOUD_MODE
+
+if not CLOUD_MODE:
+    from crawlers.live_board import crawl_live_board
+    from crawlers.alert import crawl_alerts
+    from crawlers.timetable import crawl_timetable
+    from crawlers.station import crawl_stations
 import plotly.express as px
 import plotly.graph_objects as go
 import statsmodels.api as sm
@@ -810,12 +813,15 @@ elif page == "系統設定":
 
     with col_r:
         st.markdown("## 手動資料抓取")
-        st.markdown('<div style="font-size:0.8rem;color:#8b949e;margin-bottom:12px;">⚠ 自動抓取由 launchd 排程負責（每3分鐘），此處僅供手動補抓。</div>', unsafe_allow_html=True)
-        if st.button("▶ 手動抓取一次（即時板 + 通報）", use_container_width=True):
-            with st.spinner("抓取中..."):
-                crawl_live_board()
-                crawl_alerts()
-            st.success("抓取完成")
+        if CLOUD_MODE:
+            st.info("雲端模式：資料由 Mac mini 定期推送至 GitHub，此處無法手動抓取。")
+        else:
+            st.markdown('<div style="font-size:0.8rem;color:#8b949e;margin-bottom:12px;">⚠ 自動抓取由 launchd 排程負責（每3分鐘），此處僅供手動補抓。</div>', unsafe_allow_html=True)
+            if st.button("▶ 手動抓取一次（即時板 + 通報）", use_container_width=True):
+                with st.spinner("抓取中..."):
+                    crawl_live_board()
+                    crawl_alerts()
+                st.success("抓取完成")
 
         st.markdown("---")
         st.markdown("## 資料匯出")
