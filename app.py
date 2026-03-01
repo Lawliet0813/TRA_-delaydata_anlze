@@ -292,7 +292,7 @@ if page == "首頁":
         if not df.empty:
             total = len(df)
             pct_rate = round((1 - df["IsDelayed"].mean()) * 100, 1)
-            avg_delay = round(df["ArrivalDelay"].mean(), 2)
+            avg_delay = round(df["DelayTime"].mean(), 2)
             date_range = f"{df['Date'].min()} ～ {df['Date'].max()}"
             days = df["Date"].nunique()
 
@@ -358,8 +358,8 @@ elif page == "數據總覽":
         c1, c2, c3, c4, c5 = st.columns(5)
         c1.metric("觀測筆數", f"{len(df):,}")
         c2.metric("準點率", f"{round((1-df['IsDelayed'].mean())*100,1)} %")
-        c3.metric("平均誤點", f"{round(df['ArrivalDelay'].mean(),2)} min")
-        c4.metric("最大誤點", f"{int(df['ArrivalDelay'].max())} min")
+        c3.metric("平均誤點", f"{round(df['DelayTime'].mean(),2)} min")
+        c4.metric("最大誤點", f"{int(df['DelayTime'].max())} min")
         c5.metric("資料天數", f"{df['Date'].nunique()} 天")
 
         st.markdown("---")
@@ -367,12 +367,12 @@ elif page == "數據總覽":
 
         with col_a:
             st.markdown("## 各車種平均誤點")
-            type_d = df.groupby("TrainType")["ArrivalDelay"].mean().sort_values(ascending=True).reset_index()
+            type_d = df.groupby("TrainType")["DelayTime"].mean().sort_values(ascending=True).reset_index()
             fig = go.Figure(go.Bar(
-                x=type_d["ArrivalDelay"], y=type_d["TrainType"],
+                x=type_d["DelayTime"], y=type_d["TrainType"],
                 orientation="h",
                 marker=dict(color=COLORS[:len(type_d)]),
-                text=type_d["ArrivalDelay"].round(2).astype(str) + " min",
+                text=type_d["DelayTime"].round(2).astype(str) + " min",
                 textposition="outside",
             ))
             fig.update_layout(**PLOTLY_THEME, height=260, xaxis_title="平均誤點（分鐘）")
@@ -402,7 +402,7 @@ elif page == "數據總覽":
 
         with col_c:
             st.markdown("## 誤點分鐘數分布")
-            delay_clip = df[df["ArrivalDelay"] <= 30]["ArrivalDelay"]
+            delay_clip = df[df["DelayTime"] <= 30]["DelayTime"]
             fig = go.Figure(go.Histogram(
                 x=delay_clip, nbinsx=30,
                 marker_color=GREEN, opacity=0.8,
@@ -416,7 +416,7 @@ elif page == "數據總覽":
             if "HolidayType" in df.columns:
                 hol_d = df.groupby("HolidayType").agg(
                     準點率=("IsDelayed", lambda x: round((1-x.mean())*100,1)),
-                    平均誤點=("ArrivalDelay", lambda x: round(x.mean(),2)),
+                    平均誤點=("DelayTime", lambda x: round(x.mean(),2)),
                     筆數=("IsDelayed", "count")
                 ).reset_index()
                 st.dataframe(
@@ -557,8 +557,8 @@ elif page == "站點熱力圖":
     else:
         map_df = df.dropna(subset=["Lat", "Lon"])
         station_map = map_df.groupby(["StationName", "Lat", "Lon"]).agg(
-            平均誤點=("ArrivalDelay", "mean"),
-            筆數=("ArrivalDelay", "count"),
+            平均誤點=("DelayTime", "mean"),
+            筆數=("DelayTime", "count"),
             誤點率=("IsDelayed", "mean"),
         ).reset_index()
         station_map["平均誤點"] = station_map["平均誤點"].round(2)
