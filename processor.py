@@ -113,6 +113,10 @@ def build_timetable_features(timetable_path: str) -> pd.DataFrame:
                 "TrainNo": train_no,
                 "TrainTypeRaw": type_raw,
                 "TrainTypeSimple": type_simple,
+                "Direction": info.get("Direction", np.nan),
+                "TripLine": info.get("TripLine", np.nan),
+                "StartingStationID": info.get("StartingStationID", ""),
+                "EndingStationID": info.get("EndingStationID", ""),
                 "StationID": stop.get("StationID"),
                 "StopSeq": stop.get("StopSequence", i + 1),
                 "ScheduledArr": arr_str,
@@ -148,6 +152,7 @@ class DataProcessor:
         self._timetable_df = None    # 時刻表快取
         self._mix_df = None          # 混合度快取
         self._stations_df = None     # 站點快取
+        self._line_network_df = None # 路線網路快取
         self.reason_definitions = {
             "號誌通信故障": "號誌顯示異常、聯鎖失效、通信系統斷路或無線電故障。",
             "車輛故障": "機車頭或動力車組引擎、馬達、韌機或空調設備失效。",
@@ -167,12 +172,35 @@ class DataProcessor:
     def _load_timetable(self):
         if self._timetable_df is not None:
             return self._timetable_df, self._mix_df
-        files = glob.glob(os.path.join(self.data_dir, "timetable", "*.json"))
+        # 優先用 DailyTrainTimetable（daily_*.json），其次用 GeneralTrainTimetable
+        daily_files = glob.glob(os.path.join(self.data_dir, "timetable", "daily_*.json"))
+        general_files = glob.glob(os.path.join(self.data_dir, "timetable", "*.json"))
+        general_files = [f for f in general_files if "daily_" not in os.path.basename(f)]
+        files = daily_files if daily_files else general_files
         if not files:
             return pd.DataFrame(), pd.DataFrame()
         latest = max(files, key=os.path.getmtime)
         self._timetable_df, self._mix_df = build_timetable_features(latest)
         return self._timetable_df, self._mix_df
+
+    def _load_train_types(self):
+        """載入 TrainType 對照表，回傳 {TrainTypeID: {code, name_zh, simple}} dict。"""
+        path = os.path.join(self.data_dir, "static", "train_types.json")
+        if not os.path.exists(path):
+            return {}
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        result = {}
+        for t in data.get("TrainTypes", []):
+            tid = t.get("TrainTypeID", "")
+            code = str(t.get("TrainTypeCode", ""))
+            name_zh = t.get("TrainTypeName", {}).get("Zh_tw", "")
+            result[tid] = {
+                "code": code,
+                "name_zh": name_zh,
+                "simple": _simplify_type(name_zh),
+            }
+        return result
 
     def _load_stations(self):
         if self._stations_df is not None:
@@ -200,6 +228,139 @@ class DataProcessor:
     def get_stations_data(self):
         return self._load_stations()
 
+    def _load_line_network(self):
+        """載入 LineNetwork，建構每條路線的站序與累積里程對照。"""
+        if self._line_network_df is not None:
+            return self._line_network_df
+        path = os.path.join(self.data_dir, "static", "line_network.json")
+        if not os.path.exists(path):
+            self._line_network_df = pd.DataFrame()
+            return self._line_network_df
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        records = []
+        for line in data.get("LineNetworks", []):
+            line_id = line.get("LineID")
+            line_name = line.get("LineName", {}).get("Zh_tw", "")
+            segs = line.get("LineSegments", [])
+            cum_km = 0.0
+            # 第一站
+            if segs:
+                records.append({
+                    "LineID": line_id, "LineName": line_name,
+                    "StationID": segs[0].get("FromStationID"),
+                    "StationOrder": 0, "CumulativeKM": 0.0,
+                })
+            for i, seg in enumerate(segs):
+                cum_km += seg.get("Distance", 0)
+                records.append({
+                    "LineID": line_id, "LineName": line_name,
+                    "StationID": seg.get("ToStationID"),
+                    "StationOrder": i + 1, "CumulativeKM": round(cum_km, 1),
+                })
+        self._line_network_df = pd.DataFrame(records)
+        return self._line_network_df
+
+    def get_line_network(self):
+        return self._load_line_network()
+
+    def get_station_order_for_train(self, station_ids: list) -> pd.DataFrame:
+        """
+        給定一組 StationID，找出最匹配的路線並回傳站序。
+        用途：車次追蹤頁面依地理順序排列停靠站。
+        """
+        ln = self._load_line_network()
+        if ln.empty:
+            return pd.DataFrame()
+
+        # 找哪條路線包含最多該車次的站
+        best_line = None
+        best_count = 0
+        for line_id, group in ln.groupby("LineID"):
+            matched = len(set(station_ids) & set(group["StationID"]))
+            if matched > best_count:
+                best_count = matched
+                best_line = line_id
+
+        if not best_line:
+            return pd.DataFrame()
+
+        line_df = ln[ln["LineID"] == best_line].copy()
+        result = line_df[line_df["StationID"].isin(station_ids)]
+        return result.sort_values("StationOrder")
+
+    def _parse_raw_json(self, data_subdir: str, root_key: str,
+                        date_str=None) -> pd.DataFrame:
+        """
+        統一解析 data/<data_subdir>/<date>/<time>.json 格式的即時資料。
+        回傳包含 Date / CrawlTime / TrainNo / StationID / StationName /
+        TrainTypeRaw / UpdateTime / DelayTime 的 DataFrame。
+        """
+        pattern = os.path.join(self.data_dir, data_subdir,
+                               date_str if date_str else "*", "*.json")
+        files = glob.glob(pattern)
+        if not files:
+            return pd.DataFrame()
+
+        records = []
+        for f in files:
+            try:
+                with open(f, "r", encoding="utf-8") as fp:
+                    data = json.load(fp)
+                date_folder = os.path.basename(os.path.dirname(f))
+                crawl_time = os.path.basename(f).replace(".json", "")
+                for r in data.get(root_key, []):
+                    records.append({
+                        "Date": date_folder,
+                        "CrawlTime": crawl_time,
+                        "TrainNo": r.get("TrainNo"),
+                        "StationID": r.get("StationID"),
+                        "StationName": r.get("StationName", {}).get("Zh_tw"),
+                        "TrainTypeRaw": r.get("TrainTypeName", {}).get("Zh_tw", ""),
+                        "UpdateTime": r.get("UpdateTime", ""),
+                        "DelayTime": r.get("DelayTime", 0),
+                    })
+            except:
+                pass
+
+        if not records:
+            return pd.DataFrame()
+        df = pd.DataFrame(records)
+
+        # 去重複：同日同車次同車站只保留最後一筆
+        df = df.sort_values("CrawlTime").drop_duplicates(
+            subset=["Date", "TrainNo", "StationID"], keep="last")
+        return df
+
+
+    def _enrich_base_features(self, df: pd.DataFrame) -> pd.DataFrame:
+        """為解析後的 DataFrame 加上基本分類變數與時刻表特徵。"""
+        df["TrainType"] = df["TrainTypeRaw"].apply(_simplify_type)
+        df["IsDelayed"] = (df["DelayTime"] >= 5).astype(int)
+
+        # 從時刻表合併表定到站時間 + Direction + TripLine
+        tt_df, _ = self._load_timetable()
+        if not tt_df.empty:
+            sched_cols = ["TrainNo", "StationID", "ScheduledArr"]
+            sched = tt_df[sched_cols].drop_duplicates(subset=["TrainNo", "StationID"])
+            df = df.merge(sched, on=["TrainNo", "StationID"], how="left")
+
+            # Direction / TripLine 是車次層級，取 per-train unique
+            if "Direction" in tt_df.columns:
+                dir_df = tt_df[["TrainNo", "Direction", "TripLine",
+                                "StartingStationID", "EndingStationID"]].drop_duplicates(
+                    subset=["TrainNo"])
+                df = df.merge(dir_df, on="TrainNo", how="left")
+        else:
+            df["ScheduledArr"] = ""
+            df["Direction"] = np.nan
+            df["TripLine"] = np.nan
+
+        df["Period"] = df["ScheduledArr"].apply(_get_period)
+        df["IsHoliday"] = df["Date"].apply(_is_holiday)
+        df["HolidayType"] = df["Date"].apply(_holiday_type)
+        return df
+
 
     # ── 全台原始資料（儀表板用）────────────────────────────────
 
@@ -215,52 +376,11 @@ class DataProcessor:
             except Exception as e:
                 return pd.DataFrame()
 
-        pattern = os.path.join(self.data_dir, "live_board",
-                               date_str if date_str else "*", "*.json")
-        files = glob.glob(pattern)
-        if not files: return pd.DataFrame()
+        df = self._parse_raw_json("live_board", "TrainLiveBoards", date_str)
+        if df.empty:
+            return df
 
-        records = []
-        for f in files:
-            try:
-                with open(f, "r", encoding="utf-8") as fp:
-                    data = json.load(fp)
-                date_folder = os.path.basename(os.path.dirname(f))
-                crawl_time = os.path.basename(f).replace(".json", "")
-                for r in data.get("TrainLiveBoards", []):
-                    records.append({
-                        "Date": date_folder,
-                        "CrawlTime": crawl_time,
-                        "TrainNo": r.get("TrainNo"),
-                        "StationID": r.get("StationID"),
-                        "StationName": r.get("StationName", {}).get("Zh_tw"),
-                        "TrainTypeRaw": r.get("TrainTypeName", {}).get("Zh_tw"),
-                        "UpdateTime": r.get("UpdateTime", ""),
-                        "ArrivalDelay": r.get("DelayTime", 0),
-                    })
-            except:
-                pass
-
-        if not records: return pd.DataFrame()
-        df = pd.DataFrame(records)
-        df = df.sort_values("CrawlTime").drop_duplicates(
-            subset=["Date", "TrainNo", "StationID"], keep="last")
-
-        df["TrainType"] = df["TrainTypeRaw"].apply(_simplify_type)
-        df["IsDelayed"] = (df["ArrivalDelay"] >= 5).astype(int)
-
-        # 從時刻表合併表定到站時間
-        tt, _ = self._load_timetable()
-        if not tt.empty:
-            sched = tt[["TrainNo", "StationID", "ScheduledArr"]].drop_duplicates(
-                subset=["TrainNo", "StationID"])
-            df = df.merge(sched, on=["TrainNo", "StationID"], how="left")
-        else:
-            df["ScheduledArr"] = ""
-
-        df["Period"] = df["ScheduledArr"].apply(_get_period)
-        df["IsHoliday"] = df["Date"].apply(_is_holiday)
-        df["HolidayType"] = df["Date"].apply(_holiday_type)
+        df = self._enrich_base_features(df)
 
         # 終點站標記
         # TDX LiveBoard 特性：列車到終點後即從 API 消失，無法直接比對終點站 ID
@@ -271,6 +391,35 @@ class DataProcessor:
         last_idx = df_sorted.groupby(["Date", "TrainNo"]).tail(1).index
         df["IsLastRecord"] = df.index.isin(last_idx).astype(int)
         df["IsTerminal"] = df["IsLastRecord"]  # 保留欄位名稱供舊頁面相容
+
+        # 座標合併
+        stations = self._load_stations()
+        if not stations.empty:
+            df = df.merge(stations[["StationID", "Lat", "Lon"]],
+                          on="StationID", how="left")
+        return df
+
+
+    # ── StationLiveBoard 解析（新核心）────────────────────────
+
+    def parse_station_live(self, date_str=None):
+        """讀取 station_live 資料夾，回傳與 parse_live_board 相同結構的 DataFrame。"""
+        if CLOUD_MODE or not os.path.exists(self.data_dir):
+            return self.parse_live_board(date_str)
+
+        df = self._parse_raw_json("station_live", "StationLiveBoards", date_str)
+        if df.empty:
+            return df
+
+        df = self._enrich_base_features(df)
+
+        # 終點站標記
+        terminal_map = self.get_terminal_stations()
+        df["ScheduledTerminalID"] = df["TrainNo"].map(terminal_map)
+        df_sorted = df.sort_values(["Date", "TrainNo", "CrawlTime"])
+        last_idx = df_sorted.groupby(["Date", "TrainNo"]).tail(1).index
+        df["IsLastRecord"] = df.index.isin(last_idx).astype(int)
+        df["IsTerminal"] = df["IsLastRecord"]
 
         # 座標合併
         stations = self._load_stations()
@@ -300,56 +449,12 @@ class DataProcessor:
                 except Exception:
                     pass
             return pd.DataFrame()
-        pattern = os.path.join(self.data_dir, "live_board",
-                               date_str if date_str else "*", "*.json")
-        files = glob.glob(pattern)
-        if not files: return pd.DataFrame()
 
-        records = []
-        for f in files:
-            try:
-                with open(f, "r", encoding="utf-8") as fp:
-                    data = json.load(fp)
-                date_folder = os.path.basename(os.path.dirname(f))
-                crawl_time = os.path.basename(f).replace(".json", "")
-                for r in data.get("TrainLiveBoards", []):
-                    records.append({
-                        "Date": date_folder,
-                        "CrawlTime": crawl_time,
-                        "TrainNo": r.get("TrainNo"),
-                        "StationID": r.get("StationID"),
-                        "StationName": r.get("StationName", {}).get("Zh_tw"),
-                        "TrainTypeRaw": r.get("TrainTypeName", {}).get("Zh_tw", ""),
-                        "UpdateTime": r.get("UpdateTime", ""),
-                        "DelayTime": r.get("DelayTime", 0),
-                    })
-            except:
-                pass
+        df = self._parse_raw_json("station_live", "StationLiveBoards", date_str)
+        if df.empty:
+            return df
 
-        if not records: return pd.DataFrame()
-        df = pd.DataFrame(records)
-
-        # 去重複
-        df = df.sort_values("CrawlTime").drop_duplicates(
-            subset=["Date", "TrainNo", "StationID"], keep="last")
-
-        # ── 基本分類變數 ──
-        df["TrainType"] = df["TrainTypeRaw"].apply(_simplify_type)
-        df["IsDelayed"] = (df["DelayTime"] >= 5).astype(int)
-
-        # 從時刻表合併表定到站時間
-        tt_df, mix_df = self._load_timetable()
-        if not tt_df.empty:
-            sched = tt_df[["TrainNo", "StationID", "ScheduledArr"]].drop_duplicates(
-                subset=["TrainNo", "StationID"])
-            df = df.merge(sched, on=["TrainNo", "StationID"], how="left")
-        else:
-            df["ScheduledArr"] = ""
-
-        df["Period"] = df["ScheduledArr"].apply(_get_period)
-        df["IsHoliday"] = df["Date"].apply(_is_holiday)
-        df["HolidayType"] = df["Date"].apply(_holiday_type)
-        df["IsDelayed"] = (df["DelayTime"] >= 5).astype(int)
+        df = self._enrich_base_features(df)
 
         # 星期、月份
         def safe_date(date_str):
@@ -362,6 +467,7 @@ class DataProcessor:
 
 
         # ── 合併時刻表特徵（StopSeq、MixIndex、SpeedDiff）──
+        tt_df, mix_df = self._load_timetable()
         if not tt_df.empty:
             tt_merge = tt_df[["TrainNo", "StationID", "StopSeq",
                                "IsTerminal", "RunMin"]].drop_duplicates(
@@ -400,7 +506,7 @@ class DataProcessor:
         # ── 整理輸出欄位 ──
         cols = [
             "Date", "Weekday", "Month",
-            "TrainNo", "TrainType",
+            "TrainNo", "TrainType", "Direction", "TripLine",
             "StationID", "StationName", "StopSeq",
             "ScheduledArr", "Period", "IsHoliday", "HolidayType",
             "IsTerminal", "RunMin",
@@ -450,4 +556,3 @@ class DataProcessor:
             except:
                 pass
         return pd.DataFrame(records).drop_duplicates()
-
