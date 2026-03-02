@@ -17,6 +17,12 @@ GITHUB_RAW_BASE = os.environ.get(
 #  常數定義
 # ══════════════════════════════════════════════════════════════
 
+# ── 準點率判定門檻 ──────────────────────────────────────────
+# OFFICIAL_DELAY_THRESHOLD : 台鐵官方終點站口徑（5 分鐘）
+# RESEARCH_DELAY_THRESHOLD : 本研究路網站間口徑（2 分鐘，參考日本/英國高標準）
+OFFICIAL_DELAY_THRESHOLD = 5   # 單位：分鐘
+RESEARCH_DELAY_THRESHOLD = 2   # 單位：分鐘
+
 # 車種簡化對照：統一歸為五類
 def _simplify_type(type_name: str) -> str:
     if not type_name: return "其他"
@@ -336,7 +342,10 @@ class DataProcessor:
     def _enrich_base_features(self, df: pd.DataFrame) -> pd.DataFrame:
         """為解析後的 DataFrame 加上基本分類變數與時刻表特徵。"""
         df["TrainType"] = df["TrainTypeRaw"].apply(_simplify_type)
-        df["IsDelayed"] = (df["DelayTime"] >= 2).astype(int)
+        # 研究用：路網站間判定（τ = RESEARCH_DELAY_THRESHOLD 分鐘）
+        df["IsDelayed"] = (df["DelayTime"] >= RESEARCH_DELAY_THRESHOLD).astype(int)
+        # 官方口徑代理：終點代理判定（τ = OFFICIAL_DELAY_THRESHOLD 分鐘）
+        df["IsDelayed_Official"] = (df["DelayTime"] >= OFFICIAL_DELAY_THRESHOLD).astype(int)
 
         # 從時刻表合併表定到站時間 + Direction + TripLine
         tt_df, _ = self._load_timetable()
@@ -515,7 +524,7 @@ class DataProcessor:
             "IsTerminal", "RunMin",
             "StationGrade", "SideTrackCount", "IsDouble",
             "MixIndex", "SpeedDiff",
-            "PrevDelay", "DelayTime", "IsDelayed"
+            "PrevDelay", "DelayTime", "IsDelayed", "IsDelayed_Official"
         ]
         df = df[[c for c in cols if c in df.columns]].reset_index(drop=True)
         return df
