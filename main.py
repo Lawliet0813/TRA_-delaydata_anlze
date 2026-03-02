@@ -2,7 +2,8 @@
 CLI 入口：python main.py <task>
 
 可用任務：
-  live      - StationLiveBoard (新) + Alert（每 1-3 分鐘排程）
+  live      - StationLiveBoard（每 10 分鐘排程）
+  alert     - 營運通阻資料（每 60 分鐘排程，獨立排程）
   timetable - DailyTrainTimetable/Today（每日一次）
   station   - 更新靜態資料（車站、車種、路線網路）
   all       - 全部資料
@@ -22,7 +23,8 @@ from crawlers.live_board import crawl_live_board
 def print_help():
     print("使用方式: python main.py <task>")
     print("可用的 task:")
-    print("  live      - 抓取即時到離站資訊 (StationLiveBoard) 及營運通告 (Alert)")
+    print("  live      - 抓取即時到離站資訊 (StationLiveBoard)，每 10 分鐘")
+    print("  alert     - 抓取營運通阻資料 (Alert)，每 60 分鐘")
     print("  timetable - 抓取當日營運時刻表 (DailyTrainTimetable/Today)")
     print("  station   - 更新靜態資料 (Station + TrainType + LineNetwork)")
     print("  all       - 抓取全部資料")
@@ -34,6 +36,7 @@ if __name__ == "__main__":
 
     if task == "live":
         crawl_station_live()
+    elif task == "alert":
         crawl_alerts()
     elif task == "timetable":
         crawl_daily_timetable()

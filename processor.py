@@ -336,7 +336,7 @@ class DataProcessor:
     def _enrich_base_features(self, df: pd.DataFrame) -> pd.DataFrame:
         """為解析後的 DataFrame 加上基本分類變數與時刻表特徵。"""
         df["TrainType"] = df["TrainTypeRaw"].apply(_simplify_type)
-        df["IsDelayed"] = (df["DelayTime"] >= 5).astype(int)
+        df["IsDelayed"] = (df["DelayTime"] >= 2).astype(int)
 
         # 從時刻表合併表定到站時間 + Direction + TripLine
         tt_df, _ = self._load_timetable()
@@ -369,7 +369,9 @@ class DataProcessor:
         雲端模式：直接讀 GitHub raw CSV，不解析 JSON。
         """
         if CLOUD_MODE or not os.path.exists(self.data_dir):
-            url = f"{GITHUB_RAW_BASE}/processed_data.csv"
+            from datetime import datetime
+            cache_busting = int(datetime.now().timestamp())
+            url = f"{GITHUB_RAW_BASE}/processed_data.csv?v={cache_busting}"
             try:
                 df = pd.read_csv(url)
                 return df
@@ -439,9 +441,10 @@ class DataProcessor:
         雲端模式：直接讀 GitHub raw research_dataset.csv。
         """
         if CLOUD_MODE or not os.path.exists(self.data_dir):
-            # 先嘗試 research_dataset，fallback 到 processed_data
+            from datetime import datetime
+            cache_busting = int(datetime.now().timestamp())
             for fname in ["research_dataset.csv", "processed_data.csv"]:
-                url = f"{GITHUB_RAW_BASE}/{fname}"
+                url = f"{GITHUB_RAW_BASE}/{fname}?v={cache_busting}"
                 try:
                     df = pd.read_csv(url)
                     if not df.empty:
