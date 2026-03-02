@@ -580,7 +580,20 @@ elif page == "站點熱力圖":
     </div>
     """, unsafe_allow_html=True)
 
-    if df.empty or "Lat" not in df.columns or df["Lat"].isna().all():
+    # 主動補充座標（即使 df 不含 Lat/Lon，也嘗試從 processor 取得）
+    _work_df = df.copy() if not df.empty else pd.DataFrame()
+    if not _work_df.empty and ("Lat" not in _work_df.columns or _work_df["Lat"].isna().all()):
+        _stations_coords = processor.get_stations_data()
+        if not _stations_coords.empty:
+            _work_df["StationID"] = _work_df["StationID"].astype(str)
+            _stations_coords["StationID"] = _stations_coords["StationID"].astype(str)
+            _work_df = _work_df.drop(columns=["Lat", "Lon"], errors="ignore")
+            _work_df = _work_df.merge(
+                _stations_coords[["StationID", "Lat", "Lon"]],
+                on="StationID", how="left"
+            )
+
+    if _work_df.empty or "Lat" not in _work_df.columns or _work_df["Lat"].isna().all():
         st.warning("座標資料尚未載入，請至「系統設定」更新車站座標。")
     else:
         # ── 篩選器 ──────────────────────────────────────────
@@ -588,15 +601,15 @@ elif page == "站點熱力圖":
             f_col1, f_col2, f_col3, f_col4 = st.columns(4)
 
             with f_col1:
-                all_types = sorted(df["TrainType"].dropna().unique().tolist())
+                all_types = sorted(_work_df["TrainType"].dropna().unique().tolist())
                 sel_types = st.multiselect(
                     "車種", all_types, default=all_types,
                     help="選擇要納入分析的車種"
                 )
 
             with f_col2:
-                if "Period" in df.columns:
-                    all_periods = sorted(df["Period"].dropna().unique().tolist())
+                if "Period" in _work_df.columns:
+                    all_periods = sorted(_work_df["Period"].dropna().unique().tolist())
                     sel_periods = st.multiselect(
                         "時段", all_periods, default=all_periods,
                         help="尖峰 / 離峰 / 深夜"
@@ -619,7 +632,7 @@ elif page == "站點熱力圖":
                 )
 
         # ── 套用篩選 ─────────────────────────────────────────
-        map_df = df.dropna(subset=["Lat", "Lon"]).copy()
+        map_df = _work_df.dropna(subset=["Lat", "Lon"]).copy()
         if sel_types:
             map_df = map_df[map_df["TrainType"].isin(sel_types)]
         if sel_periods and "Period" in map_df.columns:
@@ -762,6 +775,34 @@ elif page == "站點熱力圖":
                     tickfont=dict(color="#8b949e"),
                 ),
             )
+
+            # ── 疊加台鐵路線幾何軌跡 ─────────────────────────────
+            shapes = processor.get_shape()
+            LINE_COLORS = {
+                "WestTrunkLine":  "#388bfd",
+                "SeaLine":        "#d29922",
+                "EastTrunkLine":  "#2ea043",
+                "NorthLink":      "#f85149",
+                "SouthLink":      "#bc8cff",
+                "PingTungLine":   "#79c0ff",
+                "TaiDongLine":    "#56d364",
+            }
+            if shapes:
+                for line_id, shape_data in shapes.items():
+                    color_key = line_id.replace("TRA_", "")
+                    line_color = LINE_COLORS.get(color_key, "#484f58")
+                    fig.add_trace(
+                        go.Scattermapbox(
+                            lon=shape_data["lons"],
+                            lat=shape_data["lats"],
+                            mode="lines",
+                            line=dict(width=2.5, color=line_color),
+                            name=shape_data["name"],
+                            hoverinfo="name",
+                            showlegend=True,
+                        )
+                    )
+
             st.plotly_chart(fig, use_container_width=True)
 
             # ── 下方統計面板 ─────────────────────────────────
@@ -1095,8 +1136,10 @@ elif page == "系統設定":
                         try:
                             from crawlers.train_type import crawl_train_types
                             from crawlers.line_network import crawl_line_network
+                            from crawlers.shape import crawl_shape
                             crawl_train_types()
                             crawl_line_network()
+                            crawl_shape()
                             st.success("車種與路線資料已更新")
                         except Exception as e:
                             st.error(f"抓取失敗：{e}")

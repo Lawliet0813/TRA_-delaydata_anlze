@@ -17,6 +17,7 @@ from crawlers.daily_timetable import crawl_daily_timetable
 from crawlers.station import crawl_stations
 from crawlers.train_type import crawl_train_types
 from crawlers.line_network import crawl_line_network
+from crawlers.shape import crawl_shape
 from crawlers.live_board import crawl_live_board
 
 
@@ -44,6 +45,7 @@ if __name__ == "__main__":
         crawl_stations()
         crawl_train_types()
         crawl_line_network()
+        crawl_shape()
     elif task == "all":
         crawl_station_live()
         crawl_alerts()
@@ -51,6 +53,7 @@ if __name__ == "__main__":
         crawl_stations()
         crawl_train_types()
         crawl_line_network()
+        crawl_shape()
     elif task == "legacy":
         crawl_live_board()
         crawl_alerts()
