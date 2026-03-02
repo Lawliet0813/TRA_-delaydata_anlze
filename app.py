@@ -191,29 +191,50 @@ with st.sidebar:
 
     # 抓取狀態
     today = datetime.now().strftime("%Y-%m-%d")
-    today_dir = os.path.join(DATA_DIR, "live_board", today)
-    files_today = sorted(glob.glob(os.path.join(today_dir, "*.json"))) if os.path.exists(today_dir) else []
 
-    if files_today:
-        last_file = files_today[-1]
-        t_str = os.path.basename(last_file).replace(".json", "")
-        try:
-            last_dt = datetime.strptime(f"{today} {t_str[:2]}:{t_str[2:4]}:{t_str[4:6]}", "%Y-%m-%d %H:%M:%S")
-            mins = int((datetime.now() - last_dt).total_seconds() / 60)
-            if mins <= 5:
-                badge_cls, status_txt = "badge-green", f"LIVE · {mins}min ago"
-            elif mins <= 15:
-                badge_cls, status_txt = "badge-yellow", f"SLOW · {mins}min ago"
+    if CLOUD_MODE:
+        # 雲端模式：改用已載入的 df 判斷資料新鮮度，不依賴本機資料夾
+        if not df.empty:
+            last_date = df["Date"].max()
+            if last_date == today:
+                badge_cls, status_txt = "badge-green", f"CLOUD · {last_date}"
             else:
-                badge_cls, status_txt = "badge-red", f"DEAD · {mins}min"
-            st.markdown(f'<span class="badge {badge_cls}">{status_txt}</span>', unsafe_allow_html=True)
-            st.markdown(f'<div style="font-family:IBM Plex Mono,monospace;font-size:0.72rem;color:#8b949e;margin-top:6px;">最後更新 {last_dt.strftime("%H:%M:%S")}</div>', unsafe_allow_html=True)
-        except:
-            st.markdown('<span class="badge badge-yellow">UNKNOWN</span>', unsafe_allow_html=True)
+                badge_cls, status_txt = "badge-yellow", f"STALE · {last_date}"
+        else:
+            badge_cls, status_txt = "badge-red", "NO DATA"
+        st.markdown(f'<span class="badge {badge_cls}">{status_txt}</span>', unsafe_allow_html=True)
+        st.markdown(f"""
+    <div style="font-size:0.75rem; color:#8b949e; margin-top:12px; line-height:1.8;">
+        今日抓取　<span style="color:#e6edf3; font-family:IBM Plex Mono,monospace;">GitHub Actions</span><br>
+        累積筆數　<span style="color:#e6edf3; font-family:IBM Plex Mono,monospace;">{len(df):,}</span> 筆<br>
+        資料範圍　<span style="color:#e6edf3; font-family:IBM Plex Mono,monospace;">{df['Date'].min() if not df.empty else '—'}</span>
+    </div>
+    """, unsafe_allow_html=True)
     else:
-        st.markdown('<span class="badge badge-red">NO DATA</span>', unsafe_allow_html=True)
+        # 本機模式：原有邏輯不動
+        today_dir = os.path.join(DATA_DIR, "live_board", today)
+        files_today = sorted(glob.glob(os.path.join(today_dir, "*.json"))) if os.path.exists(today_dir) else []
 
-    st.markdown(f"""
+        if files_today:
+            last_file = files_today[-1]
+            t_str = os.path.basename(last_file).replace(".json", "")
+            try:
+                last_dt = datetime.strptime(f"{today} {t_str[:2]}:{t_str[2:4]}:{t_str[4:6]}", "%Y-%m-%d %H:%M:%S")
+                mins = int((datetime.now() - last_dt).total_seconds() / 60)
+                if mins <= 5:
+                    badge_cls, status_txt = "badge-green", f"LIVE · {mins}min ago"
+                elif mins <= 15:
+                    badge_cls, status_txt = "badge-yellow", f"SLOW · {mins}min ago"
+                else:
+                    badge_cls, status_txt = "badge-red", f"DEAD · {mins}min"
+                st.markdown(f'<span class="badge {badge_cls}">{status_txt}</span>', unsafe_allow_html=True)
+                st.markdown(f'<div style="font-family:IBM Plex Mono,monospace;font-size:0.72rem;color:#8b949e;margin-top:6px;">最後更新 {last_dt.strftime("%H:%M:%S")}</div>', unsafe_allow_html=True)
+            except:
+                st.markdown('<span class="badge badge-yellow">UNKNOWN</span>', unsafe_allow_html=True)
+        else:
+            st.markdown('<span class="badge badge-red">NO DATA</span>', unsafe_allow_html=True)
+
+        st.markdown(f"""
     <div style="font-size:0.75rem; color:#8b949e; margin-top:12px; line-height:1.8;">
         今日抓取　<span style="color:#e6edf3; font-family:IBM Plex Mono,monospace;">{len(files_today)}</span> 次<br>
         累積筆數　<span style="color:#e6edf3; font-family:IBM Plex Mono,monospace;">{len(df):,}</span> 筆<br>
