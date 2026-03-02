@@ -270,6 +270,47 @@ class DataProcessor:
     def get_line_network(self):
         return self._load_line_network()
 
+    def _load_shape(self) -> dict:
+        """
+        載入路線幾何（WKT LineString），回傳 {LineID: {"lons": [...], "lats": [...], "name": str}} dict。
+        雲端模式下若無本機檔案，回傳空 dict。
+        """
+        import re
+        path = os.path.join(self.data_dir, "static", "shape.json")
+        if not os.path.exists(path):
+            return {}
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+
+        shapes = {}
+        for s in data.get("Shapes", []):
+            line_id = s.get("LineID", "")
+            line_name = s.get("LineName", {}).get("Zh_tw", line_id)
+            geom = s.get("Geometry", "")
+            coords_str = re.findall(r"LINESTRING\((.+)\)", geom, re.IGNORECASE)
+            if not coords_str:
+                continue
+            try:
+                pairs = [
+                    (float(c.strip().split()[0]), float(c.strip().split()[1]))
+                    for c in coords_str[0].split(",")
+                    if len(c.strip().split()) >= 2
+                ]
+                if not pairs:
+                    continue
+                lons, lats = zip(*pairs)
+                shapes[line_id] = {
+                    "lons": list(lons),
+                    "lats": list(lats),
+                    "name": line_name,
+                }
+            except Exception:
+                continue
+        return shapes
+
+    def get_shape(self) -> dict:
+        return self._load_shape()
+
     def get_station_order_for_train(self, station_ids: list) -> pd.DataFrame:
         """
         給定一組 StationID，找出最匹配的路線並回傳站序。
@@ -383,6 +424,18 @@ class DataProcessor:
             url = f"{GITHUB_RAW_BASE}/processed_data.csv?v={cache_busting}"
             try:
                 df = pd.read_csv(url)
+                # 雲端模式：若 CSV 不含座標欄位，嘗試從 stations_coords.csv 補充
+                if df.empty:
+                    return df
+                if "Lat" not in df.columns or df["Lat"].isna().all():
+                    coords_url = f"{GITHUB_RAW_BASE}/stations_coords.csv?v={cache_busting}"
+                    try:
+                        coords_df = pd.read_csv(coords_url, dtype={"StationID": str})
+                        if not coords_df.empty and "Lat" in coords_df.columns:
+                            df["StationID"] = df["StationID"].astype(str)
+                            df = df.merge(coords_df[["StationID", "Lat", "Lon"]], on="StationID", how="left")
+                    except Exception:
+                        pass
                 return df
             except Exception as e:
                 return pd.DataFrame()
