@@ -12,6 +12,7 @@ __pycache__/
 data/live_board/
 data/timetable/
 data/alerts/
+data/station_live/
 data/static/stations.json
 data/research_dataset.csv
 # processed_data.csv 納入版控（供 Streamlit Cloud 讀取）

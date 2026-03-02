@@ -1,32 +1,30 @@
-import requests
-import json
-import os
-from datetime import datetime
-from config import BASE_URL, DATA_DIR
-from auth import auth_header
+"""
+Station 靜態車站資料爬蟲。
 
-def fetch_stations():
-    url = f"{BASE_URL}/Station"
-    params = {"$format": "JSON"}
-    resp = requests.get(url, headers=auth_header(), params=params)
-    resp.raise_for_status()
-    return resp.json()
+對應 TDX /Station 端點，存檔至 data/static/stations.json（固定覆寫）。
+"""
 
-def save_stations(data):
-    date_dir = os.path.join(DATA_DIR, "static")
-    os.makedirs(date_dir, exist_ok=True)
-    filename = os.path.join(date_dir, "stations.json")
-    with open(filename, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False)
-    return filename
+from crawlers.base import BaseCrawler
 
-def crawl_stations():
-    try:
-        data = fetch_stations()
-        path = save_stations(data)
-        print(f"[{datetime.now()}] Stations saved: {path}")
-    except Exception as e:
-        print(f"[{datetime.now()}] Stations ERROR: {e}")
+
+class StationCrawler(BaseCrawler):
+    endpoint = "/Station"
+    save_subdir = "static"
+    root_key = "Stations"
+    timestamp_file = False
+    fixed_filename = "stations.json"
+
+
+# ── 向後相容函數介面 ──────────────────────────────────────────
+
+_crawler = StationCrawler()
+
+def fetch_stations() -> dict:
+    return _crawler.fetch()
+
+def crawl_stations() -> None:
+    _crawler.crawl()
+
 
 if __name__ == "__main__":
     crawl_stations()

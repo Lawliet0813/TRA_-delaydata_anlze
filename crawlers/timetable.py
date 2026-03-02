@@ -1,30 +1,40 @@
-import requests
-import json
-import os
+"""
+GeneralTrainTimetable 時刻表爬蟲。
+
+對應 TDX /DailyTrainTimetable/Today 端點，
+存檔至 data/timetable/YYYY-MM-DD.json（每日一檔）。
+"""
+
 from datetime import datetime
-from config import BASE_URL, DATA_DIR
+
+from crawlers.base import BaseCrawler
+from config import BASE_URL
 from auth import auth_header
+import requests
 
-def fetch_daily_timetable():
-    url = f"{BASE_URL}/DailyTrainTimetable/Today"
-    params = {"$format": "JSON"}
-    resp = requests.get(url, headers=auth_header(), params=params)
-    resp.raise_for_status()
-    return resp.json()
 
-def save_timetable(data):
-    now = datetime.now()
-    date_dir = os.path.join(DATA_DIR, "timetable")
-    os.makedirs(date_dir, exist_ok=True)
-    filename = os.path.join(date_dir, f"{now.strftime('%Y-%m-%d')}.json")
-    with open(filename, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False)
-    return filename
+class TimetableCrawler(BaseCrawler):
+    endpoint = "/DailyTrainTimetable/Today"
+    save_subdir = "timetable"
+    root_key = "TrainTimetables"
+    timestamp_file = False
+    fixed_filename = ""  # 動態產生，覆寫 _build_save_path
 
-def crawl_timetable():
-    try:
-        data = fetch_daily_timetable()
-        path = save_timetable(data)
-        print(f"[{datetime.now()}] Timetable saved: {path}")
-    except Exception as e:
-        print(f"[{datetime.now()}] Timetable ERROR: {e}")
+    def _build_save_path(self) -> str:
+        """時刻表以日期命名（每天一檔）。"""
+        import os
+        from config import DATA_DIR
+        target_dir = os.path.join(DATA_DIR, self.save_subdir)
+        os.makedirs(target_dir, exist_ok=True)
+        return os.path.join(target_dir, f"{datetime.now().strftime('%Y-%m-%d')}.json")
+
+
+# ── 向後相容函數介面 ──────────────────────────────────────────
+
+_crawler = TimetableCrawler()
+
+def fetch_daily_timetable() -> dict:
+    return _crawler.fetch()
+
+def crawl_timetable() -> None:
+    _crawler.crawl()
