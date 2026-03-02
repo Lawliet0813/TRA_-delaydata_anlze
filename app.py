@@ -276,7 +276,7 @@ if page == "首頁":
 
         design_items = [
             ("應變數 Y₁", "DelayTime", "各站實際誤點分鐘數（連續）"),
-            ("應變數 Y₂", "IsDelayed", "是否誤點 ≥5 分鐘（二元）"),
+            ("應變數 Y₂", "IsDelayed", "是否誤點 ≥2 分鐘（二元，路網站間口徑）"),
             ("X₂ 車種", "TrainType", "自強 / 區間快 / 區間 / 莒光 / 傾斜式"),
             ("X₃ 時段", "Period", "尖峰 / 離峰 / 深夜"),
             ("X₄ 星期", "Weekday", "0–6"),
@@ -479,8 +479,13 @@ elif page == "準點率分析":
         st.warning("尚無資料")
     else:
         terminal_df = df[df["IsLastRecord"] == 1] if "IsLastRecord" in df.columns else pd.DataFrame()
-        inter_pct = round((1 - df["IsDelayed"].mean()) * 100, 2)
-        off_pct = round((1 - terminal_df["IsDelayed"].mean()) * 100, 2) if not terminal_df.empty else None
+        inter_pct = round((1 - df["IsDelayed"].mean()) * 100, 2)  # τ=2分，路網站間
+        # 終點代理使用官方口徑（τ=5分），若欄位不存在則 fallback 到 IsDelayed
+        if not terminal_df.empty:
+            delay_col = "IsDelayed_Official" if "IsDelayed_Official" in terminal_df.columns else "IsDelayed"
+            off_pct = round((1 - terminal_df[delay_col].mean()) * 100, 2)
+        else:
+            off_pct = None
         diff = round(off_pct - inter_pct, 2) if off_pct else None
 
         c1, c2, c3 = st.columns(3)
@@ -495,10 +500,12 @@ elif page == "準點率分析":
             TDX `TrainLiveBoard` 的特性是列車抵達**終點站後即從即時板消失**，
             因此本研究改以每班次當天**最後一筆抓取紀錄**作為終點代理值。
 
-            | 指標 | 定義 | 備註 |
-            |------|------|------|
-            | 路網站間準點率 | 所有班次 × 所有停靠站 | 本研究自定義 |
-            | 終點代理準點率 | 每班次最後一筆紀錄 | 代理台鐵月報口徑 |
+            | 指標 | 定義 | 判定門檻 τ | 備註 |
+            |------|------|-----------|------|
+            | 路網站間準點率 | 所有班次 × 所有停靠站 | 2 分鐘（RESEARCH_DELAY_THRESHOLD） | 本研究自定義，參考日本/英國標準 |
+            | 終點代理準點率 | 每班次最後一筆紀錄 | 5 分鐘（OFFICIAL_DELAY_THRESHOLD） | 代理台鐵月報口徑（實際台鐵官方為5分） |
+
+            > ⚠ 台鐵官方月報採用「終點站 + 5 分鐘門檻」，本研究為對齊學術標準，路網站間口徑採 2 分鐘門檻（`RESEARCH_DELAY_THRESHOLD`），如需比照官方可將門檻改為 `OFFICIAL_DELAY_THRESHOLD = 5`。
             """)
 
         st.markdown("---")
