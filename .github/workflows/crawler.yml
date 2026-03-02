@@ -1,0 +1,86 @@
+name: TRA Crawler 自動排程
+
+on:
+  schedule:
+    # 每日台灣 06:00 (UTC 22:00) 抓時刻表
+    - cron: '0 22 * * *'
+    # 每 10 分鐘抓即時看板（台灣 06:00-23:59 = UTC 22:00-15:59）
+    - cron: '*/10 22-23,0-15 * * *'
+    # 每 60 分鐘抓 alert（台灣 06:00-23:59）
+    - cron: '0 22-23,0-15 * * *'
+  workflow_dispatch:  # 手動觸發
+
+env:
+  TDX_CLIENT_ID: ${{ secrets.TDX_CLIENT_ID }}
+  TDX_CLIENT_SECRET: ${{ secrets.TDX_CLIENT_SECRET }}
+
+jobs:
+  crawl:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Determine task
+        id: task
+        run: |
+          HOUR=$(TZ='Asia/Taipei' date +%H)
+          MINUTE=$(TZ='Asia/Taipei' date +%M)
+          # 每日 06:00 同時抓時刻表 + 即時資料
+          if [ "$HOUR" = "06" ] && [ "$MINUTE" -lt "5" ]; then
+            echo "task=all_data" >> $GITHUB_OUTPUT
+          else
+            echo "task=live" >> $GITHUB_OUTPUT
+          fi
+          # 整點時抓 alert
+          if [ "$MINUTE" -lt "5" ]; then
+            echo "run_alert=true" >> $GITHUB_OUTPUT
+          else
+            echo "run_alert=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create .env
+        run: |
+          echo "TDX_CLIENT_ID=${{ secrets.TDX_CLIENT_ID }}" > .env
+          echo "TDX_CLIENT_SECRET=${{ secrets.TDX_CLIENT_SECRET }}" >> .env
+
+      - name: Crawl timetable (daily at 06:00)
+        if: steps.task.outputs.task == 'all_data'
+        run: python main.py timetable
+
+      - name: Crawl station data (daily at 06:00)
+        if: steps.task.outputs.task == 'all_data'
+        run: python main.py station
+
+      - name: Crawl live data
+        run: python main.py live
+
+      - name: Crawl alert data (hourly)
+        if: steps.task.outputs.run_alert == 'true'
+        run: python main.py alert
+
+      - name: Export CSV
+        run: python export_csv.py
+
+      - name: Commit & Push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/ -f
+          git diff --cached --quiet || {
+            TIMESTAMP=$(TZ='Asia/Taipei' date '+%Y-%m-%d %H:%M')
+            git commit -m "🤖 auto-crawl: ${TIMESTAMP}"
+            git push
+          }
