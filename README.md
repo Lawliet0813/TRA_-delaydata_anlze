@@ -74,6 +74,3 @@ streamlit run app.py
 
 [Streamlit Cloud](https://tra-delaydataanlze-cwvejankcpdrlhgtsdsjbf.streamlit.app/)
 
-## 作者
-
-張彥儒（NCCU MEPA，2025–2026）
