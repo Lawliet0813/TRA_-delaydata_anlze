@@ -802,14 +802,17 @@ elif page == "系統設定":
 
         st.markdown("---")
         st.markdown("## 靜態資料更新")
-        if st.button("↺ 更新車站座標", use_container_width=True):
-            with st.spinner("抓取中..."):
-                crawl_stations()
-            st.success("車站座標已更新")
-        if st.button("↺ 更新時刻表", use_container_width=True):
-            with st.spinner("抓取中..."):
-                crawl_timetable()
-            st.success("時刻表已更新")
+        if CLOUD_MODE:
+            st.info("雲端模式：靜態資料由 GitHub Actions 每日 06:00 自動更新。")
+        else:
+            if st.button("↺ 更新車站座標", use_container_width=True):
+                with st.spinner("抓取中..."):
+                    crawl_stations()
+                st.success("車站座標已更新")
+            if st.button("↺ 更新時刻表", use_container_width=True):
+                with st.spinner("抓取中..."):
+                    crawl_timetable()
+                st.success("時刻表已更新")
 
     with col_r:
         st.markdown("## 手動資料抓取")
