@@ -805,12 +805,13 @@ elif page == "系統設定":
     st.markdown("""
     <div class="page-header">
         <h1>⚙ 系統設定中心</h1>
-        <div class="subtitle">API 金鑰管理 · 資料蒐集控制 · 匯出工具</div>
+        <div class="subtitle">API 金鑰管理 · 資料蒐集控制 · 匯出工具 · 目錄監控</div>
     </div>
     """, unsafe_allow_html=True)
 
     col_l, col_r = st.columns(2, gap="large")
 
+    # ── 左欄：API 金鑰 & 靜態資料 ─────────────────────────────
     with col_l:
         st.markdown("## API 金鑰設定")
         cid  = st.text_input("TDX Client ID",     value=CLIENT_ID,     type="password")
@@ -826,43 +827,216 @@ elif page == "系統設定":
         if CLOUD_MODE:
             st.info("雲端模式：靜態資料由 GitHub Actions 每日 06:00 自動更新。")
         else:
-            if st.button("↺ 更新車站座標", use_container_width=True):
-                with st.spinner("抓取中..."):
-                    crawl_stations()
-                st.success("車站座標已更新")
-            if st.button("↺ 更新時刻表", use_container_width=True):
-                with st.spinner("抓取中..."):
-                    crawl_timetable()
-                st.success("時刻表已更新")
+            # 顯示各靜態檔案的現有狀態
+            static_files = {
+                "stations.json": "車站座標",
+                "train_types.json": "車種定義",
+                "line_network.json": "路線網路",
+            }
+            for fname, label in static_files.items():
+                fpath = os.path.join(DATA_DIR, "static", fname)
+                if os.path.exists(fpath):
+                    mtime = datetime.fromtimestamp(os.path.getmtime(fpath))
+                    size_kb = os.path.getsize(fpath) / 1024
+                    age_hrs = (datetime.now() - mtime).total_seconds() / 3600
+                    badge = "badge-green" if age_hrs < 24 else "badge-yellow" if age_hrs < 168 else "badge-red"
+                    st.markdown(
+                        f'<div style="font-family:IBM Plex Mono,monospace;font-size:0.75rem;'
+                        f'margin-bottom:4px;">'
+                        f'<span class="badge {badge}" style="margin-right:8px;">{label}</span>'
+                        f'<span style="color:#8b949e;">{mtime.strftime("%m/%d %H:%M")} · {size_kb:.1f} KB</span>'
+                        f'</div>',
+                        unsafe_allow_html=True
+                    )
+                else:
+                    st.markdown(
+                        f'<div style="font-family:IBM Plex Mono,monospace;font-size:0.75rem;'
+                        f'margin-bottom:4px;">'
+                        f'<span class="badge badge-red" style="margin-right:8px;">{label}</span>'
+                        f'<span style="color:#8b949e;">尚未下載</span>'
+                        f'</div>',
+                        unsafe_allow_html=True
+                    )
 
+            st.markdown('<div style="margin-top:10px;"></div>', unsafe_allow_html=True)
+            c_s1, c_s2, c_s3 = st.columns(3)
+            with c_s1:
+                if st.button("↺ 車站座標", use_container_width=True):
+                    with st.spinner("抓取中..."):
+                        crawl_stations()
+                    st.success("車站座標已更新")
+            with c_s2:
+                if st.button("↺ 時刻表", use_container_width=True):
+                    with st.spinner("抓取中..."):
+                        crawl_timetable()
+                    st.success("時刻表已更新")
+            with c_s3:
+                if st.button("↺ 車種/路線", use_container_width=True):
+                    with st.spinner("抓取中..."):
+                        try:
+                            from crawlers.train_type import crawl_train_types
+                            from crawlers.line_network import crawl_line_network
+                            crawl_train_types()
+                            crawl_line_network()
+                            st.success("車種與路線資料已更新")
+                        except Exception as e:
+                            st.error(f"抓取失敗：{e}")
+
+    # ── 右欄：手動抓取 & 匯出 ─────────────────────────────────
     with col_r:
         st.markdown("## 手動資料抓取")
         if CLOUD_MODE:
             st.info("雲端模式：資料由 Mac mini 定期推送至 GitHub，此處無法手動抓取。")
         else:
-            st.markdown('<div style="font-size:0.8rem;color:#8b949e;margin-bottom:12px;">⚠ 自動抓取由 launchd 排程負責（每3分鐘），此處僅供手動補抓。</div>', unsafe_allow_html=True)
-            if st.button("▶ 手動抓取一次（即時板 + 通報）", use_container_width=True):
-                with st.spinner("抓取中..."):
-                    crawl_live_board()
-                    crawl_alerts()
-                st.success("抓取完成")
+            st.markdown(
+                '<div style="font-size:0.8rem;color:#8b949e;margin-bottom:12px;">'
+                '⚠ 自動抓取由 launchd 排程負責（每3分鐘），此處僅供手動補抓。'
+                '</div>',
+                unsafe_allow_html=True
+            )
+            c_m1, c_m2 = st.columns(2)
+            with c_m1:
+                if st.button("▶ 即時板 + 通報", use_container_width=True, type="primary"):
+                    with st.spinner("抓取中..."):
+                        crawl_live_board()
+                        crawl_alerts()
+                    st.success("抓取完成")
+            with c_m2:
+                if st.button("▶ 時刻表（今日）", use_container_width=True):
+                    with st.spinner("抓取時刻表..."):
+                        crawl_timetable()
+                    st.success("時刻表抓取完成")
 
         st.markdown("---")
         st.markdown("## 資料匯出")
-        if st.button("📥 匯出全台原始資料 CSV", use_container_width=True):
-            out = os.path.join(DATA_DIR, "processed_data.csv")
-            df.to_csv(out, index=False, encoding="utf-8-sig")
-            st.success(f"已匯出 processed_data.csv（{len(df):,} 筆）")
+        c_e1, c_e2 = st.columns(2)
+        with c_e1:
+            if st.button("📥 匯出原始 CSV", use_container_width=True):
+                out = os.path.join(DATA_DIR, "processed_data.csv")
+                df.to_csv(out, index=False, encoding="utf-8-sig")
+                st.success(f"已匯出（{len(df):,} 筆）")
+        with c_e2:
+            if st.button("🔬 匯出研究資料集", use_container_width=True):
+                out = processor.export_research_csv()
+                if out:
+                    st.success(f"已匯出（{len(research_df):,} 筆）")
 
-        if st.button("🔬 匯出研究資料集 CSV", use_container_width=True):
-            out = processor.export_research_csv()
-            if out:
-                st.success(f"已匯出 research_dataset.csv（{len(research_df):,} 筆）")
+    # ── 資料目錄狀況（全寬） ──────────────────────────────────
+    st.markdown("---")
+    st.markdown("## 資料目錄狀況")
 
-        st.markdown("---")
-        st.markdown("## 資料目錄狀況")
-        dates = sorted(glob.glob(os.path.join(DATA_DIR, "live_board", "*")))
-        for d_path in dates[-5:]:
-            d_name = os.path.basename(d_path)
-            n = len(glob.glob(os.path.join(d_path, "*.json")))
-            st.markdown(f'<div style="font-family:IBM Plex Mono,monospace;font-size:0.78rem;color:#8b949e;padding:3px 0;">{d_name} <span style="color:#2ea043;">{n}</span> 筆</div>', unsafe_allow_html=True)
+    DIR_CONFIG = [
+        {"key": "live_board",   "label": "即時板 TrainLiveBoard",   "icon": "🚂", "pattern_daily": True},
+        {"key": "station_live", "label": "站板 StationLiveBoard",   "icon": "🏟", "pattern_daily": True},
+        {"key": "alerts",       "label": "異常通報 Alerts",          "icon": "⚠",  "pattern_daily": True},
+        {"key": "timetable",    "label": "時刻表 Timetable",         "icon": "📅", "pattern_daily": False},
+        {"key": "static",       "label": "靜態資料 Static",          "icon": "📌", "pattern_daily": False},
+    ]
+
+    dir_cols = st.columns(len(DIR_CONFIG))
+
+    for col, cfg in zip(dir_cols, DIR_CONFIG):
+        base = os.path.join(DATA_DIR, cfg["key"])
+        with col:
+            st.markdown(
+                f'<div style="font-size:0.72rem;color:#8b949e;font-family:IBM Plex Mono,monospace;'
+                f'text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">'
+                f'{cfg["icon"]} {cfg["key"]}</div>',
+                unsafe_allow_html=True
+            )
+            st.markdown(
+                f'<div style="font-size:0.8rem;color:#e6edf3;margin-bottom:8px;font-weight:600;">'
+                f'{cfg["label"]}</div>',
+                unsafe_allow_html=True
+            )
+
+            if not os.path.isdir(base):
+                st.markdown('<span class="badge badge-red">目錄不存在</span>', unsafe_allow_html=True)
+                continue
+
+            if cfg["pattern_daily"]:
+                date_dirs = sorted(glob.glob(os.path.join(base, "????-??-??")))
+                if not date_dirs:
+                    st.markdown('<span class="badge badge-red">無資料</span>', unsafe_allow_html=True)
+                else:
+                    total_files = sum(
+                        len(glob.glob(os.path.join(d, "*.json"))) for d in date_dirs
+                    )
+                    today_dir = os.path.join(base, datetime.now().strftime("%Y-%m-%d"))
+                    today_n = len(glob.glob(os.path.join(today_dir, "*.json"))) if os.path.isdir(today_dir) else 0
+                    badge_cls = "badge-green" if today_n > 0 else "badge-red"
+                    st.markdown(
+                        f'<span class="badge {badge_cls}">今日 {today_n} 筆</span>'
+                        f'<span style="font-family:IBM Plex Mono,monospace;font-size:0.72rem;'
+                        f'color:#8b949e;margin-left:6px;">累計 {total_files:,}</span>',
+                        unsafe_allow_html=True
+                    )
+                    st.markdown('<div style="margin-top:6px;"></div>', unsafe_allow_html=True)
+                    for d_path in date_dirs[-5:]:
+                        d_name = os.path.basename(d_path)
+                        d_jsons = glob.glob(os.path.join(d_path, "*.json"))
+                        n = len(d_jsons)
+                        dir_size_kb = sum(os.path.getsize(f) for f in d_jsons) / 1024
+                        is_today = d_name == datetime.now().strftime("%Y-%m-%d")
+                        name_color = "#2ea043" if is_today else "#8b949e"
+                        st.markdown(
+                            f'<div style="font-family:IBM Plex Mono,monospace;font-size:0.72rem;'
+                            f'padding:2px 0;border-bottom:1px solid #21262d;display:flex;'
+                            f'justify-content:space-between;">'
+                            f'<span style="color:{name_color};">{d_name}</span>'
+                            f'<span style="color:#e6edf3;">{n} <span style="color:#8b949e;">筆</span>'
+                            f' / {dir_size_kb:.0f}<span style="color:#8b949e;">KB</span></span>'
+                            f'</div>',
+                            unsafe_allow_html=True
+                        )
+            else:
+                json_files = sorted(glob.glob(os.path.join(base, "*.json")))
+                if not json_files:
+                    st.markdown('<span class="badge badge-red">無資料</span>', unsafe_allow_html=True)
+                else:
+                    st.markdown(
+                        f'<span class="badge badge-green">{len(json_files)} 個檔案</span>',
+                        unsafe_allow_html=True
+                    )
+                    st.markdown('<div style="margin-top:6px;"></div>', unsafe_allow_html=True)
+                    for fpath in json_files[-8:]:
+                        fname = os.path.basename(fpath)
+                        size_kb = os.path.getsize(fpath) / 1024
+                        mtime = datetime.fromtimestamp(os.path.getmtime(fpath))
+                        age_hrs = (datetime.now() - mtime).total_seconds() / 3600
+                        dot_color = "#2ea043" if age_hrs < 24 else "#d29922" if age_hrs < 168 else "#f85149"
+                        st.markdown(
+                            f'<div style="font-family:IBM Plex Mono,monospace;font-size:0.72rem;'
+                            f'padding:2px 0;border-bottom:1px solid #21262d;">'
+                            f'<span style="color:{dot_color};">●</span> '
+                            f'<span style="color:#e6edf3;">{fname}</span><br>'
+                            f'<span style="color:#8b949e;padding-left:12px;">'
+                            f'{mtime.strftime("%m/%d %H:%M")} · {size_kb:.1f} KB</span>'
+                            f'</div>',
+                            unsafe_allow_html=True
+                        )
+
+    # ── 整體磁碟用量摘要 ──────────────────────────────────────
+    st.markdown('<div style="margin-top:16px;"></div>', unsafe_allow_html=True)
+    total_size_mb = 0.0
+    total_json = 0
+    for root, _, files in os.walk(DATA_DIR):
+        for f in files:
+            if f.endswith(".json"):
+                fp = os.path.join(root, f)
+                total_size_mb += os.path.getsize(fp) / (1024 * 1024)
+                total_json += 1
+    csv_files = glob.glob(os.path.join(DATA_DIR, "*.csv"))
+    csv_size_mb = sum(os.path.getsize(f) for f in csv_files) / (1024 * 1024)
+
+    st.markdown(
+        f'<div style="font-family:IBM Plex Mono,monospace;font-size:0.75rem;color:#8b949e;'
+        f'background:#161b22;border:1px solid #21262d;border-radius:6px;padding:10px 16px;">'
+        f'JSON 檔案　<span style="color:#2ea043;">{total_json:,}</span> 個　'
+        f'<span style="color:#e6edf3;">{total_size_mb:.1f} MB</span>'
+        f'　　CSV 匯出　<span style="color:#388bfd;">{len(csv_files)}</span> 個　'
+        f'<span style="color:#e6edf3;">{csv_size_mb:.1f} MB</span>'
+        f'　　合計　<span style="color:#e6edf3;">{(total_size_mb + csv_size_mb):.1f} MB</span>'
+        f'</div>',
+        unsafe_allow_html=True
+    )
