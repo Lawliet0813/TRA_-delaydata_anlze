@@ -771,17 +771,32 @@ elif page == "站點熱力圖":
         - 顏色梯度：🟢 綠（低）→ 🟡 黃（中）→ 🔴 紅（高）
         """)
     _work_df = filtered_df.copy() if not filtered_df.empty else pd.DataFrame()
-    # 無條件從 stations_coords 補充 StationName（Lat/Lon 保留 CSV 原有值）
+
+    # ── 補充座標欄位（無條件重新 merge，防止 Lat_x/Lon_x 殘留欄位干擾）──
     if not _work_df.empty:
         _stations_coords = processor.get_stations_data()
         if not _stations_coords.empty:
+            # 統一 StationID 格式：str + strip + 4 位補零
             _work_df["StationID"] = _work_df["StationID"].astype(str).str.strip().str.zfill(4)
             _stations_coords = _stations_coords.copy()
             _stations_coords["StationID"] = _stations_coords["StationID"].astype(str).str.strip().str.zfill(4)
-            _drop = [c for c in ["StationName", "Lat", "Lon"] if c not in _work_df.columns or _work_df[c].isna().all()]
-            _work_df = _work_df.drop(columns=_drop, errors="ignore")
-            _coords_cols = ["StationID"] + [c for c in ["StationName", "Lat", "Lon"] if c in _stations_coords.columns]
-            _work_df = _work_df.merge(_stations_coords[_coords_cols], on="StationID", how="left")
+
+            # ★ 修正：無條件清除舊座標與站名欄位（含 _x/_y 殘留）
+            _work_df = _work_df.drop(
+                columns=[c for c in [
+                    "Lat", "Lon", "Lat_x", "Lon_x", "Lat_y", "Lon_y",
+                    "StationName", "StationName_x", "StationName_y"
+                ] if c in _work_df.columns],
+                errors="ignore"
+            )
+
+            # 從 stations_coords 合併最新座標與站名
+            _merge_cols = [c for c in ["StationID", "StationName", "Lat", "Lon"]
+                           if c in _stations_coords.columns]
+            _work_df = _work_df.merge(
+                _stations_coords[_merge_cols],
+                on="StationID", how="left"
+            )
 
     if _work_df.empty or "Lat" not in _work_df.columns or _work_df["Lat"].isna().all():
         _stations_diag = processor.get_stations_data()
