@@ -771,36 +771,35 @@ elif page == "站點熱力圖":
         - 顏色梯度：🟢 綠（低）→ 🟡 黃（中）→ 🔴 紅（高）
         """)
     _work_df = filtered_df.copy() if not filtered_df.empty else pd.DataFrame()
-    # Lat/Lon 或 StationName 任一缺失，都要從 stations_coords 補充
-    _need_merge = (
-        not _work_df.empty and (
-            "Lat" not in _work_df.columns or
-            _work_df["Lat"].isna().all() or
-            "StationName" not in _work_df.columns or
-            _work_df["StationName"].isna().all()
-        )
-    )
-    if _need_merge:
+    # 無條件從 stations_coords 補充 StationName（Lat/Lon 保留 CSV 原有值）
+    if not _work_df.empty:
         _stations_coords = processor.get_stations_data()
         if not _stations_coords.empty:
-            _work_df["StationID"] = _work_df["StationID"].astype(str)
-            _stations_coords["StationID"] = _stations_coords["StationID"].astype(str)
-            # 只 drop 要被補充的欄位，避免覆蓋已有的好資料
-            _drop_cols = [c for c in ["Lat", "Lon", "StationName"]
-                          if c not in _work_df.columns or _work_df[c].isna().all()]
-            _work_df = _work_df.drop(columns=_drop_cols, errors="ignore")
-            _merge_cols = ["StationID"] + [c for c in ["Lat", "Lon", "StationName"]
-                           if c in _stations_coords.columns]
-            _work_df = _work_df.merge(
-                _stations_coords[_merge_cols],
-                on="StationID", how="left"
-            )
+            _work_df["StationID"] = _work_df["StationID"].astype(str).str.strip().str.zfill(4)
+            _stations_coords = _stations_coords.copy()
+            _stations_coords["StationID"] = _stations_coords["StationID"].astype(str).str.strip().str.zfill(4)
+            _drop = [c for c in ["StationName", "Lat", "Lon"] if c not in _work_df.columns or _work_df[c].isna().all()]
+            _work_df = _work_df.drop(columns=_drop, errors="ignore")
+            _coords_cols = ["StationID"] + [c for c in ["StationName", "Lat", "Lon"] if c in _stations_coords.columns]
+            _work_df = _work_df.merge(_stations_coords[_coords_cols], on="StationID", how="left")
 
     if _work_df.empty or "Lat" not in _work_df.columns or _work_df["Lat"].isna().all():
-        # 診斷資訊
         _stations_diag = processor.get_stations_data()
-        st.warning(f"座標資料載入失敗，無法顯示地圖。")
-        st.caption(f"診斷：stations_coords 回傳 {len(_stations_diag)} 筆 | CLOUD_MODE={CLOUD_MODE} | _work_df 筆數={len(_work_df)}")
+        # 細部診斷
+        _lat_exists = "Lat" in _work_df.columns
+        _lat_null = _work_df["Lat"].isna().all() if _lat_exists else "N/A"
+        _sname_exists = "StationName" in _work_df.columns
+        _sname_null = _work_df["StationName"].isna().all() if _sname_exists else "N/A"
+        _sid_sample = str(_work_df["StationID"].iloc[0]) if not _work_df.empty else "N/A"
+        _coords_sid_sample = str(_stations_diag["StationID"].iloc[0]) if not _stations_diag.empty else "N/A"
+        st.warning("座標資料載入失敗，無法顯示地圖。")
+        st.caption(
+            f"診斷：stations_coords={len(_stations_diag)}筆 | CLOUD_MODE={CLOUD_MODE} | "
+            f"_work_df={len(_work_df)}筆 | "
+            f"Lat欄位={_lat_exists}/全NaN={_lat_null} | "
+            f"StationName={_sname_exists}/全NaN={_sname_null} | "
+            f"StationID樣本（df）={_sid_sample} / （coords）={_coords_sid_sample}"
+        )
     else:
         # ── 篩選器 ──────────────────────────────────────────
         with st.expander("🔍 篩選條件", expanded=True):
