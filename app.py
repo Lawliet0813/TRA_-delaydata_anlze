@@ -588,8 +588,10 @@ elif page == "站點熱力圖":
             _work_df["StationID"] = _work_df["StationID"].astype(str)
             _stations_coords["StationID"] = _stations_coords["StationID"].astype(str)
             _work_df = _work_df.drop(columns=["Lat", "Lon"], errors="ignore")
+            _merge_cols = [c for c in ["StationID", "Lat", "Lon", "StationName"]
+                           if c in _stations_coords.columns]
             _work_df = _work_df.merge(
-                _stations_coords[["StationID", "Lat", "Lon"]],
+                _stations_coords[_merge_cols],
                 on="StationID", how="left"
             )
 
