@@ -320,7 +320,7 @@ if page == "首頁":
 
         design_items = [
             ("應變數 Y₁", "DelayTime", "各站實際誤點分鐘數（連續）"),
-            ("應變數 Y₂", "IsDelayed", "是否誤點 ≥2 分鐘（二元，路網站間口徑）"),
+            ("應變數 Y₂", "IsDelayed", "是否誤點 ≥2 分鐘（二元，本研究全站定義）"),
             ("X₂ 車種", "TrainType", "自強 / 區間快 / 區間 / 莒光 / 傾斜式"),
             ("X₃ 時段", "Period", "尖峰 / 離峰 / 深夜"),
             ("X₄ 星期", "Weekday", "0–6"),
@@ -581,7 +581,7 @@ elif page == "準點率分析":
     st.markdown("""
     <div class="page-header">
         <h1>◎ 準點率分析</h1>
-        <div class="subtitle">台鐵官方準點率 vs 本研究全站準點率 · 雙口徑比較</div>
+        <div class="subtitle">台鐵官方準點率 vs 本研究全站準點率 · 雙定義比較</div>
     </div>
     """, unsafe_allow_html=True)
 
@@ -593,7 +593,7 @@ elif page == "準點率分析":
     else:
         # ── 官方準點率：終點站 + τ=5分 ──────────────────────────
         terminal_df = _pdf[_pdf["IsTerminal"] == 1] if "IsTerminal" in _pdf.columns else pd.DataFrame()
-        research_pct = round((1 - _pdf["IsDelayed"].mean()) * 100, 2)      # 全站口徑 τ=2分
+        research_pct = round((1 - _pdf["IsDelayed"].mean()) * 100, 2)      # 全站統計 τ=2分
         if not terminal_df.empty and "IsDelayed_Official" in terminal_df.columns:
             official_pct = round((1 - terminal_df["IsDelayed_Official"].mean()) * 100, 2)
         elif not terminal_df.empty:
@@ -603,7 +603,7 @@ elif page == "準點率分析":
         diff = round(official_pct - research_pct, 2) if official_pct is not None else None
 
         c1, c2, c3 = st.columns(3)
-        c1.metric("台鐵官方口徑準點率",
+        c1.metric("台鐵官方準點率",
                   f"{official_pct} %" if official_pct is not None else "—",
                   help="終點站到達，誤點門檻 5 分鐘（對齊台鐵月報定義）")
         c2.metric("本研究全站準點率",
@@ -611,19 +611,19 @@ elif page == "準點率分析":
                   help="所有停靠站記錄，誤點門檻 2 分鐘")
         if diff is not None:
             c3.metric("兩者差距", f"{diff:+.2f} %",
-                      delta="官方口徑較寬鬆" if diff > 0 else "兩者相近")
+                      delta="官方標準較寬鬆" if diff > 0 else "兩者相近")
 
-        with st.expander("📊 兩種準點率口徑說明", expanded=False):
+        with st.expander("📊 兩種準點率計算方式說明", expanded=False):
             st.markdown("""
-            | 口徑 | 判定方式 | 門檻 | 資料來源依據 |
-            |------|----------|------|--------------|
-            | **台鐵官方口徑** | 列車抵達**終點站**，超過 5 分鐘才算誤點 | τ = 5 分鐘 | 對齊台鐵每月公告之準點率統計數字 |
-            | **本研究全站口徑** | 列車在**每個停靠站**到站，超過 2 分鐘即算誤點 | τ = 2 分鐘 | 參考日本 JR 及英國 Network Rail 的統計標準 |
+            | 計算方式 | 判定方式 | 門檻 | 資料來源依據 |
+            |----------|----------|------|--------------|
+            | **台鐵官方統計** | 列車抵達**終點站**，超過 5 分鐘才算誤點 | τ = 5 分鐘 | 對齊台鐵每月公告之準點率統計數字 |
+            | **本研究全站統計** | 列車在**每個停靠站**到站，超過 2 分鐘即算誤點 | τ = 2 分鐘 | 參考日本 JR 及英國 Network Rail 的統計標準 |
 
-            > **為什麼要並列兩種口徑？**
+            > **為什麼要並列兩種計算方式？**
             > 台鐵官方統計只看終點站，列車就算中途大誤點、後來追回來，就不列入誤點計算。
-            > 本研究改採全站口徑，可以抓到中途各站的累積延誤狀況，更能反映旅客的實際搭乘感受。
-            > 兩種口徑並列呈現，方便與台鐵官方數字直接對照，也讓研究結果更具說服力。
+            > 本研究改採全站統計，可以抓到中途各站的累積延誤狀況，更能反映旅客的實際搭乘感受。
+            > 兩種計算方式並列呈現，方便與台鐵官方數字直接對照，也讓研究結果更具說服力。
             """)
 
         st.markdown("---")
@@ -668,7 +668,7 @@ elif page == "準點率分析":
         col_a, col_b = st.columns(2, gap="large")
 
         with col_a:
-            st.markdown("## 各車種：台鐵官方口徑準點率")
+            st.markdown("## 各車種：台鐵官方準點率")
             if not terminal_df.empty:
                 d = terminal_df.groupby("TrainType")["IsDelayed_Official" if "IsDelayed_Official" in terminal_df.columns else "IsDelayed"].apply(
                     lambda x: round((1-x.mean())*100,1)).reset_index(name="準點率").sort_values("準點率")
@@ -683,7 +683,7 @@ elif page == "準點率分析":
             else:
                 st.info("終點站紀錄不足，請累積更多資料後再查看。")
             with st.expander("📊 說明", expanded=False):
-                st.markdown("**台鐵官方口徑**：只統計在終點站（`IsTerminal=1`）的到站紀錄，`DelayTime ≥ 5 分鐘`才算誤點，與台鐵每月公告的準點率計算方式相同。")
+                st.markdown("**台鐵官方統計方式**：只統計在終點站（`IsTerminal=1`）的到站紀錄，`DelayTime ≥ 5 分鐘`才算誤點，與台鐵每月公告的準點率計算方式相同。")
 
         with col_b:
             st.markdown("## 各車種：本研究全站準點率")
@@ -698,7 +698,7 @@ elif page == "準點率分析":
                                xaxis=dict(**AXIS_STYLE, range=[80, 100]))
             st.plotly_chart(fig2, use_container_width=True)
             with st.expander("📊 說明", expanded=False):
-                st.markdown("**本研究全站口徑**：涵蓋所有停靠站（含中途各站）的到站紀錄，`DelayTime ≥ 2 分鐘`即算誤點，比官方口徑更能反映旅客在中途站的實際等候情形。")
+                st.markdown("**本研究全站統計方式**：涵蓋所有停靠站（含中途各站）的到站紀錄，`DelayTime ≥ 2 分鐘`即算誤點，比台鐵官方統計更能反映旅客在中途站的實際等候情形。")
 
         st.markdown("---")
         st.markdown("## 各時段 × 車種準點率交叉比較")
@@ -717,7 +717,7 @@ elif page == "準點率分析":
             st.plotly_chart(fig3, use_container_width=True)
             with st.expander("📊 說明", expanded=False):
                 st.markdown("""
-                採用**本研究全站口徑**（τ = 2 分鐘）。橫軸為時段、縱軸為準點率，各色長條代表不同車種。
+                採用**本研究全站統計方式**（τ = 2 分鐘）。橫軸為時段、縱軸為準點率，各色長條代表不同車種。
 
                 尖峰時段班距短、列車密度高，一旦某班車延誤，後面的班次很容易跟著卡住；
                 長程車種（自強、莒光）停靠站多，中途累積誤點的機會也比較高。
@@ -737,7 +737,7 @@ elif page == "準點率分析":
             st.plotly_chart(fig4, use_container_width=True)
             with st.expander("📊 說明", expanded=False):
                 st.markdown("""
-                採用**本研究全站口徑**（τ = 2 分鐘）。比較平日、週末、國定假日三種情境下，各車種的準點率差異。
+                採用**本研究全站統計方式**（τ = 2 分鐘）。比較平日、週末、國定假日三種情境下，各車種的準點率差異。
 
                 連假或連續假期旅運量明顯增加，但台鐵的班次數不一定同步加開，
                 旅客上下車時間拉長、站停時間超秒，就容易讓誤點一站一站往後傳。
