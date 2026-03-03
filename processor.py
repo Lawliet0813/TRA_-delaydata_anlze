@@ -376,8 +376,8 @@ class DataProcessor:
                         date_str=None) -> pd.DataFrame:
         """
         統一解析 data/<data_subdir>/<date>/<time>.json 格式的即時資料。
-        回傳包含 Date / CrawlTime / TrainNo / StationID / StationName /
-        TrainTypeRaw / UpdateTime / DelayTime 的 DataFrame。
+        StationLiveBoard 直接含有 ScheduleArrivalTime / ScheduleDepartureTime，
+        不需再 join 時刻表取得表定到站時間。
         """
         pattern = os.path.join(self.data_dir, data_subdir,
                                date_str if date_str else "*", "*.json")
@@ -393,6 +393,11 @@ class DataProcessor:
                 date_folder = os.path.basename(os.path.dirname(f))
                 crawl_time = os.path.basename(f).replace(".json", "")
                 for r in data.get(root_key, []):
+                    # ScheduleArrivalTime 格式為 HH:MM:SS，取前 5 碼統一為 HH:MM
+                    arr_raw = r.get("ScheduleArrivalTime", "")
+                    arr_hhmm = arr_raw[:5] if arr_raw else ""
+                    dep_raw = r.get("ScheduleDepartureTime", "")
+                    dep_hhmm = dep_raw[:5] if dep_raw else ""
                     records.append({
                         "Date": date_folder,
                         "CrawlTime": crawl_time,
@@ -400,6 +405,12 @@ class DataProcessor:
                         "StationID": r.get("StationID"),
                         "StationName": r.get("StationName", {}).get("Zh_tw"),
                         "TrainTypeRaw": r.get("TrainTypeName", {}).get("Zh_tw", ""),
+                        "Direction": r.get("Direction", np.nan),
+                        "TripLine": r.get("TripLine", np.nan),
+                        "EndingStationID": r.get("EndingStationID", ""),
+                        "ScheduleArrivalTime": arr_hhmm,
+                        "ScheduleDepartureTime": dep_hhmm,
+                        "RunningStatus": r.get("RunningStatus", 0),
                         "UpdateTime": r.get("UpdateTime", ""),
                         "DelayTime": r.get("DelayTime", 0),
                     })
@@ -417,31 +428,21 @@ class DataProcessor:
 
 
     def _enrich_base_features(self, df: pd.DataFrame) -> pd.DataFrame:
-        """為解析後的 DataFrame 加上基本分類變數與時刻表特徵。"""
+        """為解析後的 DataFrame 加上基本分類變數。
+        表定到站時間直接使用 StationLiveBoard 的 ScheduleArrivalTime，
+        不需 join GeneralTrainTimetable（SKILL 規範第3點）。
+        """
         df["TrainType"] = df["TrainTypeRaw"].apply(_simplify_type)
-        # 研究用：路網站間判定（τ = RESEARCH_DELAY_THRESHOLD 分鐘）
-        df["IsDelayed"] = (df["DelayTime"] >= RESEARCH_DELAY_THRESHOLD).astype(int)
-        # 官方口徑代理：終點代理判定（τ = OFFICIAL_DELAY_THRESHOLD 分鐘）
-        df["IsDelayed_Official"] = (df["DelayTime"] >= OFFICIAL_DELAY_THRESHOLD).astype(int)
 
-        # 從時刻表合併表定到站時間 + Direction + TripLine
-        tt_df, _ = self._load_timetable()
-        if not tt_df.empty:
-            sched_cols = ["TrainNo", "StationID", "ScheduledArr"]
-            sched = tt_df[sched_cols].drop_duplicates(subset=["TrainNo", "StationID"])
-            df = df.merge(sched, on=["TrainNo", "StationID"], how="left")
+        # Y1：官方口徑（終點站 5 分鐘）— 主要依變數
+        df["IsDelayed"] = (df["DelayTime"] >= OFFICIAL_DELAY_THRESHOLD).astype(int)
+        # Y1b：研究口徑（路網站間 2 分鐘）— 輔助比較用
+        df["IsDelayed_Research"] = (df["DelayTime"] >= RESEARCH_DELAY_THRESHOLD).astype(int)
 
-            # Direction / TripLine 是車次層級，取 per-train unique
-            if "Direction" in tt_df.columns:
-                dir_df = tt_df[["TrainNo", "Direction", "TripLine",
-                                "StartingStationID", "EndingStationID"]].drop_duplicates(
-                    subset=["TrainNo"])
-                df = df.merge(dir_df, on="TrainNo", how="left")
-        else:
-            df["ScheduledArr"] = ""
-            df["Direction"] = np.nan
-            df["TripLine"] = np.nan
+        # ScheduledArr 直接從 API 欄位取得，統一欄位名稱
+        df["ScheduledArr"] = df["ScheduleArrivalTime"] if "ScheduleArrivalTime" in df.columns else ""
 
+        # Period 由 ScheduledArr 衍生
         df["Period"] = df["ScheduledArr"].apply(_get_period)
         df["IsHoliday"] = df["Date"].apply(_is_holiday)
         df["HolidayType"] = df["Date"].apply(_holiday_type)
@@ -533,15 +534,14 @@ class DataProcessor:
 
     def build_research_dataset(self, date_str=None):
         """
-        建構全台研究用資料集，對應 Notion 研究設計：
-        Y₁ IsDelayed（0/1）、Y₂ DelayTime（連續）
-        ...
-        雲端模式：直接讀 GitHub raw research_dataset.csv。
+        建構研究用資料集（分析單位1：車次×車站）。
+        Y1 IsDelayed（官方 5 分鐘口徑）、Y2 DelayTime（連續）
+        雲端模式：直接讀 GitHub raw processed_data.csv。
         """
         if CLOUD_MODE or not os.path.exists(self.data_dir):
             from datetime import datetime
             cache_busting = int(datetime.now().timestamp())
-            for fname in ["research_dataset.csv", "processed_data.csv"]:
+            for fname in ["processed_data.csv", "research_dataset.csv"]:
                 url = f"{GITHUB_RAW_BASE}/{fname}?v={cache_busting}"
                 try:
                     df = pd.read_csv(url)
@@ -558,47 +558,38 @@ class DataProcessor:
         df = self._enrich_base_features(df)
 
         # 星期、月份
-        def safe_date(date_str):
-            try: return datetime.strptime(date_str, "%Y-%m-%d")
+        def safe_date(ds):
+            try: return datetime.strptime(ds, "%Y-%m-%d")
             except: return None
         df["_dt"] = df["Date"].apply(safe_date)
-        df["Weekday"] = df["_dt"].apply(lambda d: d.weekday() if d else np.nan)  # 0=週一
+        df["Weekday"] = df["_dt"].apply(lambda d: d.weekday() if d else np.nan)
         df["Month"] = df["_dt"].apply(lambda d: d.month if d else np.nan)
         df.drop(columns=["_dt"], inplace=True)
 
+        # ── 終點站標記：EndingStationID 直接來自 LiveBoard ──
+        df["IsTerminal"] = (
+            df["StationID"].astype(str) == df["EndingStationID"].astype(str)
+        ).astype(int)
 
-        # ── 合併時刻表特徵（StopSeq、MixIndex、SpeedDiff）──
+        # ── StopSeq、RunMin、MixIndex：仍需 GeneralTimetable 計算 ──
         tt_df, mix_df = self._load_timetable()
         if not tt_df.empty:
-            tt_merge = tt_df[["TrainNo", "StationID", "StopSeq",
-                               "RunMin"]].drop_duplicates(
+            tt_merge = tt_df[["TrainNo", "StationID", "StopSeq", "RunMin"]].drop_duplicates(
                 subset=["TrainNo", "StationID"])
             df = df.merge(tt_merge, on=["TrainNo", "StationID"], how="left")
 
-            # ── 終點站標記：以時刻表 EndingStationID 為準 ──
-            ending_map = (tt_df.drop_duplicates(subset=["TrainNo"])
-                          .set_index("TrainNo")["EndingStationID"])
-            df["_EndingID"] = df["TrainNo"].map(ending_map)
-            df["IsTerminal"] = (df["StationID"].astype(str) ==
-                                df["_EndingID"].astype(str)).astype(int)
-            df.drop(columns=["_EndingID"], inplace=True)
-
-            # ── 首末班：始發站出發時間 & 終點站到站時間 ──
-            first_dep = (tt_df[tt_df["StopSeq"] == 1]
-                         .groupby("TrainNo")["ScheduledDep"].first())
-            last_arr  = (tt_df[tt_df["IsTerminal"] == 1]
-                         .groupby("TrainNo")["ScheduledArr"].first())
+            # 首末班時間
+            first_dep = tt_df[tt_df["StopSeq"] == 1].groupby("TrainNo")["ScheduledDep"].first()
+            last_arr = tt_df[tt_df["IsTerminal"] == 1].groupby("TrainNo")["ScheduledArr"].first()
             df["FirstDep"] = df["TrainNo"].map(first_dep)
-            df["LastArr"]  = df["TrainNo"].map(last_arr)
+            df["LastArr"] = df["TrainNo"].map(last_arr)
         else:
             df["StopSeq"] = np.nan
-            df["IsTerminal"] = 0
             df["RunMin"] = np.nan
             df["FirstDep"] = np.nan
-            df["LastArr"]  = np.nan
+            df["LastArr"] = np.nan
 
         if not mix_df.empty:
-            # 用到站小時合併混合度
             df["_ArrHour"] = df["ScheduledArr"].apply(
                 lambda t: int(t.split(":")[0]) if isinstance(t, str) and ":" in t else -1)
             df = df.merge(mix_df, left_on=["StationID", "_ArrHour"],
@@ -608,19 +599,25 @@ class DataProcessor:
             df["MixIndex"] = np.nan
             df["SpeedDiff"] = np.nan
 
-        # ── 前站誤點（PrevDelay）──
+        # ── PrevDelay（X9）──
         df = df.sort_values(["Date", "TrainNo", "StopSeq"])
         df["PrevDelay"] = df.groupby(["Date", "TrainNo"])["DelayTime"].shift(1).fillna(0)
 
-        # ── 靜態結構變數（預留欄位，由手動表填入）──
+        # ── X6 StationClass：從 stations.json 合併 ──
+        stations = self._load_stations()
+        if not stations.empty and "StationClass" in stations.columns:
+            df = df.merge(stations[["StationID", "StationClass"]], on="StationID", how="left")
+        else:
+            df["StationClass"] = np.nan
+
+        # ── X7 X8：station_structure.csv 手動填 ──
         static_path = os.path.join(self.data_dir, "static", "station_structure.csv")
         if os.path.exists(static_path):
             struct = pd.read_csv(static_path, dtype={"StationID": str})
             df = df.merge(struct, on="StationID", how="left")
         else:
-            df["StationGrade"] = np.nan   # X₆ 待填
-            df["SideTrackCount"] = np.nan # X₇ 待填
-            df["IsDouble"] = np.nan       # X₈ 待填
+            df["SideTrackCount"] = np.nan
+            df["IsDouble"] = np.nan
 
         # ── 整理輸出欄位 ──
         cols = [
@@ -630,21 +627,53 @@ class DataProcessor:
             "ScheduledArr", "FirstDep", "LastArr",
             "Period", "IsHoliday", "HolidayType",
             "IsTerminal", "RunMin",
-            "StationGrade", "SideTrackCount", "IsDouble",
+            "StationClass", "SideTrackCount", "IsDouble",
             "MixIndex", "SpeedDiff",
-            "PrevDelay", "DelayTime", "IsDelayed", "IsDelayed_Official"
+            "PrevDelay", "DelayTime", "IsDelayed", "IsDelayed_Research"
         ]
         df = df[[c for c in cols if c in df.columns]].reset_index(drop=True)
         return df
 
     def export_research_csv(self):
+        """
+        產生三個分析單位的 CSV，輸出至 data/output/：
+        1. processed_data.csv   — 車次×車站（主要）
+        2. train_level.csv      — 車次終點誤點
+        3. station_level.csv    — 車站平均誤點
+        """
         df = self.build_research_dataset()
         if df.empty:
-            print("無資料可匯出"); return None
-        out = os.path.join(self.data_dir, "research_dataset.csv")
-        df.to_csv(out, index=False, encoding="utf-8-sig")
-        print(f"研究資料集已匯出：{out}（{len(df)} 筆）")
-        return out
+            print("無資料可匯出")
+            return None
+
+        out_dir = os.path.join(self.data_dir, "output")
+        os.makedirs(out_dir, exist_ok=True)
+
+        # 1. 車次×車站
+        out1 = os.path.join(out_dir, "processed_data.csv")
+        df.to_csv(out1, index=False, encoding="utf-8-sig")
+        print(f"[1] processed_data.csv：{len(df)} 筆")
+
+        # 2. 車次終點（IsTerminal==1 那筆）
+        train_df = df[df["IsTerminal"] == 1].copy()
+        out2 = os.path.join(out_dir, "train_level.csv")
+        train_df.to_csv(out2, index=False, encoding="utf-8-sig")
+        print(f"[2] train_level.csv：{len(train_df)} 筆")
+
+        # 3. 車站平均
+        agg_dict = {
+            "AvgDelay": ("DelayTime", "mean"),
+            "DelayRate": ("IsDelayed", "mean"),
+            "TotalObs": ("DelayTime", "count"),
+        }
+        if "StationName" in df.columns:
+            agg_dict["StationName"] = ("StationName", "first")
+        station_df = df.groupby("StationID").agg(**agg_dict).reset_index()
+        out3 = os.path.join(out_dir, "station_level.csv")
+        station_df.to_csv(out3, index=False, encoding="utf-8-sig")
+        print(f"[3] station_level.csv：{len(station_df)} 站")
+
+        return out_dir
 
 
     # ── 異常通報解析 ─────────────────────────────────────────
