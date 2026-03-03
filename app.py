@@ -771,13 +771,25 @@ elif page == "站點熱力圖":
         - 顏色梯度：🟢 綠（低）→ 🟡 黃（中）→ 🔴 紅（高）
         """)
     _work_df = filtered_df.copy() if not filtered_df.empty else pd.DataFrame()
-    if not _work_df.empty and ("Lat" not in _work_df.columns or _work_df["Lat"].isna().all()):
+    # Lat/Lon 或 StationName 任一缺失，都要從 stations_coords 補充
+    _need_merge = (
+        not _work_df.empty and (
+            "Lat" not in _work_df.columns or
+            _work_df["Lat"].isna().all() or
+            "StationName" not in _work_df.columns or
+            _work_df["StationName"].isna().all()
+        )
+    )
+    if _need_merge:
         _stations_coords = processor.get_stations_data()
         if not _stations_coords.empty:
             _work_df["StationID"] = _work_df["StationID"].astype(str)
             _stations_coords["StationID"] = _stations_coords["StationID"].astype(str)
-            _work_df = _work_df.drop(columns=["Lat", "Lon"], errors="ignore")
-            _merge_cols = [c for c in ["StationID", "Lat", "Lon", "StationName"]
+            # 只 drop 要被補充的欄位，避免覆蓋已有的好資料
+            _drop_cols = [c for c in ["Lat", "Lon", "StationName"]
+                          if c not in _work_df.columns or _work_df[c].isna().all()]
+            _work_df = _work_df.drop(columns=_drop_cols, errors="ignore")
+            _merge_cols = ["StationID"] + [c for c in ["Lat", "Lon", "StationName"]
                            if c in _stations_coords.columns]
             _work_df = _work_df.merge(
                 _stations_coords[_merge_cols],
