@@ -60,8 +60,8 @@ jobs:
         if: steps.task.outputs.task == 'all_data'
         run: python main.py timetable
 
-      - name: Crawl station data (daily at 06:00)
-        if: steps.task.outputs.task == 'all_data'
+      - name: Crawl station data (daily at 06:00 or manual dispatch)
+        if: steps.task.outputs.task == 'all_data' || github.event_name == 'workflow_dispatch'
         run: python main.py station
 
       - name: Crawl live data
