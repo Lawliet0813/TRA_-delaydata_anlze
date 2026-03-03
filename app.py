@@ -797,7 +797,10 @@ elif page == "站點熱力圖":
             )
 
     if _work_df.empty or "Lat" not in _work_df.columns or _work_df["Lat"].isna().all():
-        st.warning("座標資料尚未載入，請至「系統設定」更新車站座標。")
+        # 診斷資訊
+        _stations_diag = processor.get_stations_data()
+        st.warning(f"座標資料載入失敗，無法顯示地圖。")
+        st.caption(f"診斷：stations_coords 回傳 {len(_stations_diag)} 筆 | CLOUD_MODE={CLOUD_MODE} | _work_df 筆數={len(_work_df)}")
     else:
         # ── 篩選器 ──────────────────────────────────────────
         with st.expander("🔍 篩選條件", expanded=True):
