@@ -6,7 +6,7 @@ import glob
 from datetime import datetime
 import os
 from config import CLIENT_ID, CLIENT_SECRET, DATA_DIR
-from processor import DataProcessor, CLOUD_MODE
+from processor import DataProcessor, CLOUD_MODE, GITHUB_RAW_BASE
 
 if not CLOUD_MODE:
     from crawlers.live_board import crawl_live_board
