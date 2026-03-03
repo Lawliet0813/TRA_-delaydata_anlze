@@ -35,7 +35,6 @@ if not df.empty:
         if not stations_df.empty:
             df["StationID"] = df["StationID"].astype(str)
             stations_df["StationID"] = stations_df["StationID"].astype(str)
-            # 若 df 已有 Lat/Lon 欄位先移除再重新 merge
             df = df.drop(columns=["Lat", "Lon"], errors="ignore")
             df = df.merge(stations_df, on="StationID", how="left")
 
@@ -58,6 +57,34 @@ if not df.empty:
     out2 = os.path.join(DATA_DIR, "processed_data.csv")
     df.to_csv(out2, index=False, encoding="utf-8-sig")
     print(f"processed_data.csv 匯出完成（{len(df)} 筆）")
+
+    # ── 首末班車時間表（供查詢用）──
+    tt_df, _ = dp._load_timetable()
+    if not tt_df.empty:
+        first_trains = (tt_df[tt_df["StopSeq"] == 1]
+                        [["TrainNo", "TrainTypeSimple", "StartingStationID",
+                           "EndingStationID", "ScheduledDep", "Direction", "TripLine"]]
+                        .rename(columns={"ScheduledDep": "FirstDep",
+                                         "StartingStationID": "FromStationID",
+                                         "EndingStationID": "ToStationID"})
+                        .drop_duplicates(subset=["TrainNo"]))
+        last_trains = (tt_df[tt_df["IsTerminal"] == 1]
+                       [["TrainNo", "ScheduledArr"]]
+                       .rename(columns={"ScheduledArr": "LastArr"})
+                       .drop_duplicates(subset=["TrainNo"]))
+        train_schedule = first_trains.merge(last_trains, on="TrainNo", how="left")
+
+        # 合併車站名稱（起迄站）
+        sname = {}
+        if os.path.exists(stations_path):
+            for s in stations_data.get("Stations", []):
+                sname[s.get("StationID")] = s.get("StationName", {}).get("Zh_tw", "")
+        train_schedule["FromStation"] = train_schedule["FromStationID"].map(sname)
+        train_schedule["ToStation"]   = train_schedule["ToStationID"].map(sname)
+
+        sched_path = os.path.join(DATA_DIR, "train_schedule.csv")
+        train_schedule.to_csv(sched_path, index=False, encoding="utf-8-sig")
+        print(f"train_schedule.csv 匯出完成（{len(train_schedule)} 班次）")
 else:
     print("無資料可匯出")
 

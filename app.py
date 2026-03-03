@@ -146,7 +146,23 @@ def load_data():
     rd = processor.build_research_dataset()
     return df, rd
 
+@st.cache_data(ttl=3600)
+def load_train_schedule():
+    """載入首末班車時間表（train_schedule.csv）"""
+    if CLOUD_MODE:
+        from datetime import datetime as _dt
+        url = f"{GITHUB_RAW_BASE}/train_schedule.csv?v={int(_dt.now().timestamp())}"
+        try:
+            return pd.read_csv(url, dtype={"TrainNo": str})
+        except Exception:
+            return pd.DataFrame()
+    local = os.path.join(DATA_DIR, "train_schedule.csv")
+    if os.path.exists(local):
+        return pd.read_csv(local, dtype={"TrainNo": str})
+    return pd.DataFrame()
+
 df, research_df = load_data()
+schedule_df = load_train_schedule()
 
 # ══════════════════════════════════════════════════════════════
 #  側邊欄
@@ -565,7 +581,7 @@ elif page == "準點率分析":
     st.markdown("""
     <div class="page-header">
         <h1>◎ 準點率分析</h1>
-        <div class="subtitle">雙維度準點率比較：台鐵官方終點代理 vs 路網全站指標</div>
+        <div class="subtitle">台鐵官方準點率 vs 本研究全站準點率 · 雙口徑比較</div>
     </div>
     """, unsafe_allow_html=True)
 
@@ -575,81 +591,114 @@ elif page == "準點率分析":
     if _pdf.empty:
         st.warning("此日期無資料，請重新選擇。")
     else:
-        terminal_df = _pdf[_pdf["IsLastRecord"] == 1] if "IsLastRecord" in _pdf.columns else pd.DataFrame()
-        inter_pct = round((1 - _pdf["IsDelayed"].mean()) * 100, 2)  # τ=2分，路網站間
-        # 終點代理使用官方口徑（τ=5分），若欄位不存在則 fallback 到 IsDelayed
-        if not terminal_df.empty:
-            delay_col = "IsDelayed_Official" if "IsDelayed_Official" in terminal_df.columns else "IsDelayed"
-            off_pct = round((1 - terminal_df[delay_col].mean()) * 100, 2)
+        # ── 官方準點率：終點站 + τ=5分 ──────────────────────────
+        terminal_df = _pdf[_pdf["IsTerminal"] == 1] if "IsTerminal" in _pdf.columns else pd.DataFrame()
+        research_pct = round((1 - _pdf["IsDelayed"].mean()) * 100, 2)      # 全站口徑 τ=2分
+        if not terminal_df.empty and "IsDelayed_Official" in terminal_df.columns:
+            official_pct = round((1 - terminal_df["IsDelayed_Official"].mean()) * 100, 2)
+        elif not terminal_df.empty:
+            official_pct = round((1 - terminal_df["IsDelayed"].mean()) * 100, 2)
         else:
-            off_pct = None
-        diff = round(off_pct - inter_pct, 2) if off_pct else None
+            official_pct = None
+        diff = round(official_pct - research_pct, 2) if official_pct is not None else None
 
         c1, c2, c3 = st.columns(3)
-        c1.metric("路網站間準點率", f"{inter_pct} %", help="全部班次在所有停靠站的準點率")
-        if off_pct:
-            c2.metric("終點代理準點率", f"{off_pct} %", help="每班次最後一筆紀錄的準點率")
+        c1.metric("台鐵官方口徑準點率",
+                  f"{official_pct} %" if official_pct is not None else "—",
+                  help="終點站到達，誤點門檻 5 分鐘（對齊台鐵月報定義）")
+        c2.metric("本研究全站準點率",
+                  f"{research_pct} %",
+                  help="所有停靠站記錄，誤點門檻 2 分鐘")
+        if diff is not None:
             c3.metric("兩者差距", f"{diff:+.2f} %",
-                      delta=f"{'列車接近終點誤點增加' if diff < 0 else '列車趕回誤點'}")
+                      delta="官方口徑較寬鬆" if diff > 0 else "兩者相近")
 
-        with st.expander("⚠ API 限制與指標定義說明", expanded=False):
+        with st.expander("📊 兩種準點率口徑說明", expanded=False):
             st.markdown("""
-            TDX `TrainLiveBoard` 的特性是列車抵達**終點站後即從即時板消失**，
-            因此本研究改以每班次當天**最後一筆抓取紀錄**作為終點代理值。
+            | 口徑 | 判定方式 | 門檻 | 對應來源 |
+            |------|----------|------|----------|
+            | **台鐵官方口徑** | 列車抵達**終點站**，超過 5 分鐘為誤點 | τ = 5 分鐘 | 對齊台鐵每月公告準點率統計 |
+            | **本研究全站口徑** | 列車在**每個停靠站**到站，超過 2 分鐘為誤點 | τ = 2 分鐘 | 參考日本（JR）及英國（Network Rail）標準 |
 
-            | 指標 | 定義 | 判定門檻 τ | 備註 |
-            |------|------|-----------|------|
-            | 路網站間準點率 | 所有班次 × 所有停靠站 | 2 分鐘（RESEARCH_DELAY_THRESHOLD） | 本研究自定義，參考日本/英國標準 |
-            | 終點代理準點率 | 每班次最後一筆紀錄 | 5 分鐘（OFFICIAL_DELAY_THRESHOLD） | 代理台鐵月報口徑（實際台鐵官方為5分） |
-
-            > ⚠ 台鐵官方月報採用「終點站 + 5 分鐘門檻」，本研究為對齊學術標準，路網站間口徑採 2 分鐘門檻（`RESEARCH_DELAY_THRESHOLD`），如需比照官方可將門檻改為 `OFFICIAL_DELAY_THRESHOLD = 5`。
+            > **為什麼有兩種？**
+            > 台鐵官方只看終點站是否超過 5 分鐘，中途延誤只要趕回來就不算誤點。
+            > 本研究採全站口徑，能捕捉中途累積延誤對旅客的實際影響。
+            > 兩種口徑都保留，便於與官方數字比對，也強化研究的分析深度。
             """)
+
+        st.markdown("---")
+
+        # ── 首末班車查詢 ─────────────────────────────────────
+        st.markdown("## 班次首末班時間查詢")
+        if schedule_df.empty:
+            st.info("首末班時間表尚未產生，請等待 GitHub Actions 重新匯出資料。")
+        else:
+            sc1, sc2, sc3 = st.columns([2, 2, 1])
+            with sc1:
+                all_types_s = ["全部車種"] + sorted(schedule_df["TrainTypeSimple"].dropna().unique().tolist())
+                sel_type = st.selectbox("車種篩選", all_types_s, key="sched_type")
+            with sc2:
+                search_no = st.text_input("車次號碼查詢", placeholder="例：101", key="sched_no")
+            with sc3:
+                dir_opt = st.selectbox("行駛方向", ["全部", "順行（基→高）", "逆行（高→基）"], key="sched_dir")
+
+            sdf = schedule_df.copy()
+            if sel_type != "全部車種":
+                sdf = sdf[sdf["TrainTypeSimple"] == sel_type]
+            if search_no.strip():
+                sdf = sdf[sdf["TrainNo"].str.contains(search_no.strip())]
+            if dir_opt == "順行（基→高）":
+                sdf = sdf[sdf["Direction"] == 0]
+            elif dir_opt == "逆行（高→基）":
+                sdf = sdf[sdf["Direction"] == 1]
+
+            show_cols = ["TrainNo", "TrainTypeSimple", "FromStation", "FirstDep",
+                         "ToStation", "LastArr", "Direction"]
+            col_labels = {"TrainNo": "車次", "TrainTypeSimple": "車種",
+                          "FromStation": "始發站", "FirstDep": "始發時間",
+                          "ToStation": "終點站", "LastArr": "終到時間",
+                          "Direction": "方向"}
+            disp = sdf[[c for c in show_cols if c in sdf.columns]].rename(columns=col_labels)
+            disp["方向"] = disp["方向"].map({0: "順行", 1: "逆行"}) if "方向" in disp.columns else disp.get("方向","")
+            st.dataframe(disp, use_container_width=True, hide_index=True,
+                         height=min(400, 35 + len(disp) * 35))
+            st.caption(f"共 {len(disp):,} 班次　｜　首班：{sdf['FirstDep'].min() if not sdf.empty else '—'}　末班：{sdf['LastArr'].max() if not sdf.empty else '—'}")
 
         st.markdown("---")
         col_a, col_b = st.columns(2, gap="large")
 
         with col_a:
-            st.markdown("## 各車種：路網站間準點率")
-            d = _pdf.groupby("TrainType")["IsDelayed"].apply(
-                lambda x: round((1-x.mean())*100,1)).reset_index(name="準點率").sort_values("準點率")
-            fig = go.Figure(go.Bar(
-                x=d["準點率"], y=d["TrainType"], orientation="h",
-                marker_color=COLORS[:len(d)],
-                text=d["準點率"].astype(str)+"%", textposition="outside",
-            ))
-            fig.update_layout(**PLOTLY_THEME, height=240,
-                              xaxis=dict(**AXIS_STYLE, range=[80, 100]))
-            st.plotly_chart(fig, use_container_width=True)
+            st.markdown("## 各車種：台鐵官方口徑準點率")
+            if not terminal_df.empty:
+                d = terminal_df.groupby("TrainType")["IsDelayed_Official" if "IsDelayed_Official" in terminal_df.columns else "IsDelayed"].apply(
+                    lambda x: round((1-x.mean())*100,1)).reset_index(name="準點率").sort_values("準點率")
+                fig = go.Figure(go.Bar(
+                    x=d["準點率"], y=d["TrainType"], orientation="h",
+                    marker_color=COLORS[:len(d)],
+                    text=d["準點率"].astype(str)+"%", textposition="outside",
+                ))
+                fig.update_layout(**PLOTLY_THEME, height=240,
+                                  xaxis=dict(**AXIS_STYLE, range=[80, 100]))
+                st.plotly_chart(fig, use_container_width=True)
+            else:
+                st.info("終點站紀錄不足，請累積更多資料後再查看。")
             with st.expander("📊 說明", expanded=False):
-                st.markdown("""
-                **路網站間準點率**：所有停靠站記錄（非僅終點）的準點率，門檻 **τ = 2 分鐘**。
-
-                此為本研究自定義指標，反映全路網每個停靠點的服務品質，
-                比僅看終點站更能捕捉中途延誤累積的現象。
-                """)
+                st.markdown("**台鐵官方口徑**：只計算在終點站（`IsTerminal=1`）的紀錄，`DelayTime ≥ 5` 才算誤點。")
 
         with col_b:
-            st.markdown("## 各車種：終點代理準點率")
-            if terminal_df.empty:
-                st.info("尚無終點代理資料")
-            else:
-                d2 = terminal_df.groupby("TrainType")["IsDelayed"].apply(
-                    lambda x: round((1-x.mean())*100,1)).reset_index(name="準點率").sort_values("準點率")
-                fig2 = go.Figure(go.Bar(
-                    x=d2["準點率"], y=d2["TrainType"], orientation="h",
-                    marker_color=COLORS[:len(d2)],
-                    text=d2["準點率"].astype(str)+"%", textposition="outside",
-                ))
-                fig2.update_layout(**PLOTLY_THEME, height=240,
-                                   xaxis=dict(**AXIS_STYLE, range=[80, 100]))
-                st.plotly_chart(fig2, use_container_width=True)
-                with st.expander("📊 說明", expanded=False):
-                    st.markdown("""
-                    **終點代理準點率**：每班次**最後一筆**抓取記錄的準點率，門檻 **τ = 5 分鐘**。
-
-                    由於 TDX API 的特性（列車抵終點後從即時板消失），
-                    以每班次當天最後一筆記錄作為終點代理，門檻對齊台鐵官方月報口徑（5分鐘）。
-                    """)
+            st.markdown("## 各車種：本研究全站準點率")
+            d2 = _pdf.groupby("TrainType")["IsDelayed"].apply(
+                lambda x: round((1-x.mean())*100,1)).reset_index(name="準點率").sort_values("準點率")
+            fig2 = go.Figure(go.Bar(
+                x=d2["準點率"], y=d2["TrainType"], orientation="h",
+                marker_color=COLORS[:len(d2)],
+                text=d2["準點率"].astype(str)+"%", textposition="outside",
+            ))
+            fig2.update_layout(**PLOTLY_THEME, height=240,
+                               xaxis=dict(**AXIS_STYLE, range=[80, 100]))
+            st.plotly_chart(fig2, use_container_width=True)
+            with st.expander("📊 說明", expanded=False):
+                st.markdown("**本研究全站口徑**：所有停靠站記錄（含中途站），`DelayTime ≥ 2` 才算誤點。")
 
         st.markdown("---")
         st.markdown("## 各時段 × 車種準點率交叉比較")
@@ -668,10 +717,8 @@ elif page == "準點率分析":
             st.plotly_chart(fig3, use_container_width=True)
             with st.expander("📊 說明", expanded=False):
                 st.markdown("""
-                **交叉分析**：同時考慮「時段（X3）」與「車種（X1）」兩個自變數。
-
-                可觀察特定車種在尖峰時段是否有更顯著的準點率下降，
-                對應研究假設：**尖峰時段加上長程列車（自強/莒光）交叉效應最大**。
+                使用**本研究全站口徑**（τ=2分）。同時考慮時段（X3）與車種（X1）兩個變數的交叉效應。
+                尖峰時段班距緊，誤點傳遞效應強；長程車種（自強、莒光）停靠站多，誤點累積機會更高。
                 """)
 
         st.markdown("---")
@@ -687,10 +734,8 @@ elif page == "準點率分析":
             st.plotly_chart(fig4, use_container_width=True)
             with st.expander("📊 說明", expanded=False):
                 st.markdown("""
-                **假日效應（X4 IsHoliday）**：比較平日、週末、國定假日三種情境下各車種的準點率差異。
-
-                假日旅運量增加但班次密度不一定增加，可能造成旅客上下車時間拉長、誤點累積。
-                此圖對應研究設計中 X4（假日）的單變數視覺化。
+                使用**本研究全站口徑**（τ=2分）。假日旅運量增加但班次密度未必提高，
+                停靠時間延長可能導致誤點累積，對應研究設計 X4（假日）的單變數視覺化。
                 """)
 
 

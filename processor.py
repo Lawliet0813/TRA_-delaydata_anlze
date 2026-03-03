@@ -535,13 +535,31 @@ class DataProcessor:
         tt_df, mix_df = self._load_timetable()
         if not tt_df.empty:
             tt_merge = tt_df[["TrainNo", "StationID", "StopSeq",
-                               "IsTerminal", "RunMin"]].drop_duplicates(
+                               "RunMin"]].drop_duplicates(
                 subset=["TrainNo", "StationID"])
             df = df.merge(tt_merge, on=["TrainNo", "StationID"], how="left")
+
+            # ── 終點站標記：以時刻表 EndingStationID 為準 ──
+            ending_map = (tt_df.drop_duplicates(subset=["TrainNo"])
+                          .set_index("TrainNo")["EndingStationID"])
+            df["_EndingID"] = df["TrainNo"].map(ending_map)
+            df["IsTerminal"] = (df["StationID"].astype(str) ==
+                                df["_EndingID"].astype(str)).astype(int)
+            df.drop(columns=["_EndingID"], inplace=True)
+
+            # ── 首末班：始發站出發時間 & 終點站到站時間 ──
+            first_dep = (tt_df[tt_df["StopSeq"] == 1]
+                         .groupby("TrainNo")["ScheduledDep"].first())
+            last_arr  = (tt_df[tt_df["IsTerminal"] == 1]
+                         .groupby("TrainNo")["ScheduledArr"].first())
+            df["FirstDep"] = df["TrainNo"].map(first_dep)
+            df["LastArr"]  = df["TrainNo"].map(last_arr)
         else:
             df["StopSeq"] = np.nan
             df["IsTerminal"] = 0
             df["RunMin"] = np.nan
+            df["FirstDep"] = np.nan
+            df["LastArr"]  = np.nan
 
         if not mix_df.empty:
             # 用到站小時合併混合度
@@ -573,7 +591,8 @@ class DataProcessor:
             "Date", "Weekday", "Month",
             "TrainNo", "TrainType", "Direction", "TripLine",
             "StationID", "StationName", "StopSeq",
-            "ScheduledArr", "Period", "IsHoliday", "HolidayType",
+            "ScheduledArr", "FirstDep", "LastArr",
+            "Period", "IsHoliday", "HolidayType",
             "IsTerminal", "RunMin",
             "StationGrade", "SideTrackCount", "IsDouble",
             "MixIndex", "SpeedDiff",
