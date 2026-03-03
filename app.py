@@ -642,248 +642,253 @@ elif page == "站點熱力圖":
             st.warning("篩選後無資料，請調整篩選條件。")
         else:
             # ── 聚合：以車站為單位 ───────────────────────────
-            station_map = (
-                map_df.groupby(["StationName", "Lat", "Lon"])
-                .agg(
-                    平均誤點=("DelayTime", "mean"),
-                    筆數=("DelayTime", "count"),
-                    誤點率=("IsDelayed", "mean"),
-                )
-                .reset_index()
-            )
-            station_map["平均誤點"] = station_map["平均誤點"].round(2)
-            station_map["誤點率_pct"] = (station_map["誤點率"] * 100).round(1)
-
-            color_col   = "平均誤點" if "平均誤點" in view_metric else "誤點率_pct"
-            hover_label = "平均誤點（分）" if "平均誤點" in view_metric else "誤點率（%）"
-
-            MAP_CENTER  = {"lat": 23.8, "lon": 121.0}
-            MAP_ZOOM    = 6.5
-            MAP_STYLE   = "carto-darkmatter"
-            COLOR_SCALE = ["#2ea043", "#d29922", "#f85149"]   # 綠→黃→紅
-
-            # ── 地圖繪製 ─────────────────────────────────────
-            if map_mode == "🔥 密度熱力圖":
-                # 以每筆原始紀錄（含重複加權）繪製密度
-                fig = px.density_mapbox(
-                    map_df,
-                    lat="Lat",
-                    lon="Lon",
-                    z="DelayTime",          # 權重 = 誤點分鐘
-                    radius=28,
-                    center=MAP_CENTER,
-                    zoom=MAP_ZOOM,
-                    mapbox_style=MAP_STYLE,
-                    color_continuous_scale=COLOR_SCALE,
-                    range_color=[0, map_df["DelayTime"].quantile(0.95)],
-                    labels={"z": "誤點分鐘（加權）"},
-                    title="全台車站誤點密度熱力圖",
-                )
-                # 疊加車站位置點（半透明）
-                fig.add_trace(
-                    go.Scattermapbox(
-                        lat=station_map["Lat"],
-                        lon=station_map["Lon"],
-                        mode="markers+text",
-                        marker=dict(size=5, color="rgba(230,237,243,0.5)"),
-                        text=station_map["StationName"],
-                        textfont=dict(size=9, color="rgba(230,237,243,0.6)"),
-                        textposition="top right",
-                        hovertemplate=(
-                            "<b>%{text}</b><br>"
-                            "平均誤點：%{customdata[0]} 分<br>"
-                            "誤點率：%{customdata[1]}%<br>"
-                            "觀測筆數：%{customdata[2]}<extra></extra>"
-                        ),
-                        customdata=station_map[["平均誤點", "誤點率_pct", "筆數"]].values,
-                        name="車站位置",
-                        showlegend=False,
+            # ★ 修正：過濾掉 StationName 為空的列，避免 groupby KeyError
+            map_df = map_df.dropna(subset=["StationName"])
+            if map_df.empty:
+                st.warning("篩選後無有效車站名稱資料，請確認 stations.json 已包含完整站名。")
+            else:
+                station_map = (
+                    map_df.groupby(["StationName", "Lat", "Lon"])
+                    .agg(
+                        平均誤點=("DelayTime", "mean"),
+                        筆數=("DelayTime", "count"),
+                        誤點率=("IsDelayed", "mean"),
                     )
+                    .reset_index()
                 )
+                station_map["平均誤點"] = station_map["平均誤點"].round(2)
+                station_map["誤點率_pct"] = (station_map["誤點率"] * 100).round(1)
 
-            elif map_mode == "🔵 氣泡誤點圖":
-                fig = px.scatter_mapbox(
-                    station_map,
-                    lat="Lat",
-                    lon="Lon",
-                    hover_name="StationName",
-                    color=color_col,
-                    size=color_col,
-                    size_max=22,
-                    color_continuous_scale=COLOR_SCALE,
-                    zoom=MAP_ZOOM,
-                    center=MAP_CENTER,
-                    mapbox_style=MAP_STYLE,
-                    labels={color_col: hover_label},
-                    custom_data=["StationName", "平均誤點", "誤點率_pct", "筆數"],
-                )
-                fig.update_traces(
-                    hovertemplate=(
-                        "<b>%{customdata[0]}</b><br>"
-                        "平均誤點：%{customdata[1]} 分<br>"
-                        "誤點率：%{customdata[2]}%<br>"
-                        "觀測筆數：%{customdata[3]}<extra></extra>"
-                    )
-                )
+                color_col   = "平均誤點" if "平均誤點" in view_metric else "誤點率_pct"
+                hover_label = "平均誤點（分）" if "平均誤點" in view_metric else "誤點率（%）"
 
-            else:  # 📍 車站位置
-                fig = go.Figure()
-                fig.add_trace(
-                    go.Scattermapbox(
-                        lat=station_map["Lat"],
-                        lon=station_map["Lon"],
-                        mode="markers+text",
-                        marker=dict(
-                            size=10,
-                            color=station_map[color_col],
-                            colorscale=COLOR_SCALE,
-                            colorbar=dict(
-                                title=dict(text=hover_label, font=dict(color="#8b949e")),
-                                tickfont=dict(color="#8b949e"),
-                                bgcolor="rgba(0,0,0,0)",
-                            ),
-                            showscale=True,
-                        ),
-                        text=station_map["StationName"],
-                        textfont=dict(size=9, color="#e6edf3"),
-                        textposition="top right",
-                        hovertemplate=(
-                            "<b>%{text}</b><br>"
-                            f"{hover_label}：%{{customdata[0]}}<br>"
-                            "觀測筆數：%{customdata[1]}<extra></extra>"
-                        ),
-                        customdata=station_map[[color_col, "筆數"]].values,
-                        name="車站",
-                    )
-                )
-                fig.update_layout(
-                    mapbox=dict(
-                        style=MAP_STYLE,
+                MAP_CENTER  = {"lat": 23.8, "lon": 121.0}
+                MAP_ZOOM    = 6.5
+                MAP_STYLE   = "carto-darkmatter"
+                COLOR_SCALE = ["#2ea043", "#d29922", "#f85149"]   # 綠→黃→紅
+
+                # ── 地圖繪製 ─────────────────────────────────────
+                if map_mode == "🔥 密度熱力圖":
+                    # 以每筆原始紀錄（含重複加權）繪製密度
+                    fig = px.density_mapbox(
+                        map_df,
+                        lat="Lat",
+                        lon="Lon",
+                        z="DelayTime",          # 權重 = 誤點分鐘
+                        radius=28,
                         center=MAP_CENTER,
                         zoom=MAP_ZOOM,
+                        mapbox_style=MAP_STYLE,
+                        color_continuous_scale=COLOR_SCALE,
+                        range_color=[0, map_df["DelayTime"].quantile(0.95)],
+                        labels={"z": "誤點分鐘（加權）"},
+                        title="全台車站誤點密度熱力圖",
                     )
-                )
-
-            # ── 統一 layout ──────────────────────────────────
-            fig.update_layout(
-                paper_bgcolor="rgba(0,0,0,0)",
-                margin=dict(l=0, r=0, t=36, b=0),
-                height=580,
-                font=dict(color="#8b949e", family="Noto Sans TC"),
-                coloraxis_colorbar=dict(
-                    title=dict(text=hover_label, font=dict(color="#8b949e")),
-                    tickfont=dict(color="#8b949e"),
-                ),
-            )
-
-            # ── 疊加台鐵路線幾何軌跡 ─────────────────────────────
-            shapes = processor.get_shape()
-            LINE_COLORS = {
-                "WestTrunkLine":  "#388bfd",
-                "SeaLine":        "#d29922",
-                "EastTrunkLine":  "#2ea043",
-                "NorthLink":      "#f85149",
-                "SouthLink":      "#bc8cff",
-                "PingTungLine":   "#79c0ff",
-                "TaiDongLine":    "#56d364",
-            }
-            if shapes:
-                for line_id, shape_data in shapes.items():
-                    color_key = line_id.replace("TRA_", "")
-                    line_color = LINE_COLORS.get(color_key, "#484f58")
+                    # 疊加車站位置點（半透明）
                     fig.add_trace(
                         go.Scattermapbox(
-                            lon=shape_data["lons"],
-                            lat=shape_data["lats"],
-                            mode="lines",
-                            line=dict(width=2.5, color=line_color),
-                            name=shape_data["name"],
-                            hoverinfo="name",
-                            showlegend=True,
+                            lat=station_map["Lat"],
+                            lon=station_map["Lon"],
+                            mode="markers+text",
+                            marker=dict(size=5, color="rgba(230,237,243,0.5)"),
+                            text=station_map["StationName"],
+                            textfont=dict(size=9, color="rgba(230,237,243,0.6)"),
+                            textposition="top right",
+                            hovertemplate=(
+                                "<b>%{text}</b><br>"
+                                "平均誤點：%{customdata[0]} 分<br>"
+                                "誤點率：%{customdata[1]}%<br>"
+                                "觀測筆數：%{customdata[2]}<extra></extra>"
+                            ),
+                            customdata=station_map[["平均誤點", "誤點率_pct", "筆數"]].values,
+                            name="車站位置",
+                            showlegend=False,
                         )
                     )
 
-            st.plotly_chart(fig, use_container_width=True)
-
-            # ── 下方統計面板 ─────────────────────────────────
-            st.markdown("---")
-            m1, m2, m3, m4 = st.columns(4)
-            m1.metric("車站總數", f"{len(station_map)} 站")
-            m2.metric("觀測筆數", f"{int(station_map['筆數'].sum()):,}")
-            m3.metric("全體平均誤點", f"{station_map['平均誤點'].mean():.2f} 分")
-            m4.metric("全體誤點率",
-                      f"{(map_df['IsDelayed'].mean()*100):.1f}%")
-
-            # ── 誤點前 10 名 ─────────────────────────────────
-            st.markdown("## 🔴 誤點前 10 名車站")
-            top10 = (
-                station_map
-                .nlargest(10, "平均誤點")
-                [["StationName", "平均誤點", "誤點率_pct", "筆數"]]
-                .reset_index(drop=True)
-            )
-            top10.index = top10.index + 1   # 從 1 開始排名
-            top10.columns = ["車站", "平均誤點（分）", "誤點率（%）", "觀測筆數"]
-
-            col_tbl, col_bar = st.columns([1, 1], gap="large")
-            with col_tbl:
-                st.dataframe(
-                    top10.style
-                    .background_gradient(
-                        cmap="RdYlGn_r",
-                        subset=["平均誤點（分）", "誤點率（%）"],
+                elif map_mode == "🔵 氣泡誤點圖":
+                    fig = px.scatter_mapbox(
+                        station_map,
+                        lat="Lat",
+                        lon="Lon",
+                        hover_name="StationName",
+                        color=color_col,
+                        size=color_col,
+                        size_max=22,
+                        color_continuous_scale=COLOR_SCALE,
+                        zoom=MAP_ZOOM,
+                        center=MAP_CENTER,
+                        mapbox_style=MAP_STYLE,
+                        labels={color_col: hover_label},
+                        custom_data=["StationName", "平均誤點", "誤點率_pct", "筆數"],
                     )
-                    .format({
-                        "平均誤點（分）": "{:.2f}",
-                        "誤點率（%）": "{:.1f}%",
-                        "觀測筆數": "{:,}",
-                    }),
-                    use_container_width=True,
+                    fig.update_traces(
+                        hovertemplate=(
+                            "<b>%{customdata[0]}</b><br>"
+                            "平均誤點：%{customdata[1]} 分<br>"
+                            "誤點率：%{customdata[2]}%<br>"
+                            "觀測筆數：%{customdata[3]}<extra></extra>"
+                        )
+                    )
+
+                else:  # 📍 車站位置
+                    fig = go.Figure()
+                    fig.add_trace(
+                        go.Scattermapbox(
+                            lat=station_map["Lat"],
+                            lon=station_map["Lon"],
+                            mode="markers+text",
+                            marker=dict(
+                                size=10,
+                                color=station_map[color_col],
+                                colorscale=COLOR_SCALE,
+                                colorbar=dict(
+                                    title=dict(text=hover_label, font=dict(color="#8b949e")),
+                                    tickfont=dict(color="#8b949e"),
+                                    bgcolor="rgba(0,0,0,0)",
+                                ),
+                                showscale=True,
+                            ),
+                            text=station_map["StationName"],
+                            textfont=dict(size=9, color="#e6edf3"),
+                            textposition="top right",
+                            hovertemplate=(
+                                "<b>%{text}</b><br>"
+                                f"{hover_label}：%{{customdata[0]}}<br>"
+                                "觀測筆數：%{customdata[1]}<extra></extra>"
+                            ),
+                            customdata=station_map[[color_col, "筆數"]].values,
+                            name="車站",
+                        )
+                    )
+                    fig.update_layout(
+                        mapbox=dict(
+                            style=MAP_STYLE,
+                            center=MAP_CENTER,
+                            zoom=MAP_ZOOM,
+                        )
+                    )
+
+                # ── 統一 layout ──────────────────────────────────
+                fig.update_layout(
+                    paper_bgcolor="rgba(0,0,0,0)",
+                    margin=dict(l=0, r=0, t=36, b=0),
+                    height=580,
+                    font=dict(color="#8b949e", family="Noto Sans TC"),
+                    coloraxis_colorbar=dict(
+                        title=dict(text=hover_label, font=dict(color="#8b949e")),
+                        tickfont=dict(color="#8b949e"),
+                    ),
                 )
 
-            with col_bar:
-                fig_bar = go.Figure(
-                    go.Bar(
-                        x=top10["平均誤點（分）"],
-                        y=top10["車站"],
-                        orientation="h",
-                        marker=dict(
-                            color=top10["平均誤點（分）"],
-                            colorscale=COLOR_SCALE,
-                            showscale=False,
-                        ),
-                        text=top10["平均誤點（分）"].apply(lambda v: f"{v:.2f} 分"),
-                        textposition="outside",
-                        textfont=dict(size=11, color="#8b949e"),
+                # ── 疊加台鐵路線幾何軌跡 ─────────────────────────────
+                shapes = processor.get_shape()
+                LINE_COLORS = {
+                    "WestTrunkLine":  "#388bfd",
+                    "SeaLine":        "#d29922",
+                    "EastTrunkLine":  "#2ea043",
+                    "NorthLink":      "#f85149",
+                    "SouthLink":      "#bc8cff",
+                    "PingTungLine":   "#79c0ff",
+                    "TaiDongLine":    "#56d364",
+                }
+                if shapes:
+                    for line_id, shape_data in shapes.items():
+                        color_key = line_id.replace("TRA_", "")
+                        line_color = LINE_COLORS.get(color_key, "#484f58")
+                        fig.add_trace(
+                            go.Scattermapbox(
+                                lon=shape_data["lons"],
+                                lat=shape_data["lats"],
+                                mode="lines",
+                                line=dict(width=2.5, color=line_color),
+                                name=shape_data["name"],
+                                hoverinfo="name",
+                                showlegend=True,
+                            )
+                        )
+
+                st.plotly_chart(fig, use_container_width=True)
+
+                # ── 下方統計面板 ─────────────────────────────────
+                st.markdown("---")
+                m1, m2, m3, m4 = st.columns(4)
+                m1.metric("車站總數", f"{len(station_map)} 站")
+                m2.metric("觀測筆數", f"{int(station_map['筆數'].sum()):,}")
+                m3.metric("全體平均誤點", f"{station_map['平均誤點'].mean():.2f} 分")
+                m4.metric("全體誤點率",
+                          f"{(map_df['IsDelayed'].mean()*100):.1f}%")
+
+                # ── 誤點前 10 名 ─────────────────────────────────
+                st.markdown("## 🔴 誤點前 10 名車站")
+                top10 = (
+                    station_map
+                    .nlargest(10, "平均誤點")
+                    [["StationName", "平均誤點", "誤點率_pct", "筆數"]]
+                    .reset_index(drop=True)
+                )
+                top10.index = top10.index + 1   # 從 1 開始排名
+                top10.columns = ["車站", "平均誤點（分）", "誤點率（%）", "觀測筆數"]
+
+                col_tbl, col_bar = st.columns([1, 1], gap="large")
+                with col_tbl:
+                    st.dataframe(
+                        top10.style
+                        .background_gradient(
+                            cmap="RdYlGn_r",
+                            subset=["平均誤點（分）", "誤點率（%）"],
+                        )
+                        .format({
+                            "平均誤點（分）": "{:.2f}",
+                            "誤點率（%）": "{:.1f}%",
+                            "觀測筆數": "{:,}",
+                        }),
+                        use_container_width=True,
+                    )
+
+                with col_bar:
+                    fig_bar = go.Figure(
+                        go.Bar(
+                            x=top10["平均誤點（分）"],
+                            y=top10["車站"],
+                            orientation="h",
+                            marker=dict(
+                                color=top10["平均誤點（分）"],
+                                colorscale=COLOR_SCALE,
+                                showscale=False,
+                            ),
+                            text=top10["平均誤點（分）"].apply(lambda v: f"{v:.2f} 分"),
+                            textposition="outside",
+                            textfont=dict(size=11, color="#8b949e"),
+                        )
+                    )
+                    fig_bar.update_layout(
+                        **PLOTLY_THEME,
+                        height=360,
+                        yaxis=dict(**AXIS_STYLE, autorange="reversed"),
+                        xaxis=dict(**AXIS_STYLE, title="平均誤點（分）"),
+                        title="Top 10 高誤點車站",
+                    )
+                    st.plotly_chart(fig_bar, use_container_width=True)
+
+                # ── 車站誤點分布（直方圖）────────────────────────
+                st.markdown("---")
+                st.markdown("## 📊 各車站平均誤點分布")
+                fig_hist = go.Figure(
+                    go.Histogram(
+                        x=station_map["平均誤點"],
+                        nbinsx=25,
+                        marker_color=GREEN,
+                        opacity=0.85,
                     )
                 )
-                fig_bar.update_layout(
+                fig_hist.update_layout(
                     **PLOTLY_THEME,
-                    height=360,
-                    yaxis=dict(**AXIS_STYLE, autorange="reversed"),
+                    height=220,
                     xaxis=dict(**AXIS_STYLE, title="平均誤點（分）"),
-                    title="Top 10 高誤點車站",
+                    yaxis=dict(**AXIS_STYLE, title="車站數"),
                 )
-                st.plotly_chart(fig_bar, use_container_width=True)
-
-            # ── 車站誤點分布（直方圖）────────────────────────
-            st.markdown("---")
-            st.markdown("## 📊 各車站平均誤點分布")
-            fig_hist = go.Figure(
-                go.Histogram(
-                    x=station_map["平均誤點"],
-                    nbinsx=25,
-                    marker_color=GREEN,
-                    opacity=0.85,
-                )
-            )
-            fig_hist.update_layout(
-                **PLOTLY_THEME,
-                height=220,
-                xaxis=dict(**AXIS_STYLE, title="平均誤點（分）"),
-                yaxis=dict(**AXIS_STYLE, title="車站數"),
-            )
-            st.plotly_chart(fig_hist, use_container_width=True)
+                st.plotly_chart(fig_hist, use_container_width=True)
 
 # ══════════════════════════════════════════════════════════════
 #  ≋  OLS 迴歸
