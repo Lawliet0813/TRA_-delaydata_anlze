@@ -211,6 +211,35 @@ class DataProcessor:
     def _load_stations(self):
         if self._stations_df is not None:
             return self._stations_df
+
+        # 雲端模式：優先從 stations_coords.csv，fallback 到 stations.json
+        if CLOUD_MODE:
+            from datetime import datetime as _dt
+            import urllib.request
+            cache_busting = int(_dt.now().timestamp())
+            try:
+                url = f"{GITHUB_RAW_BASE}/stations_coords.csv?v={cache_busting}"
+                df = pd.read_csv(url, dtype={"StationID": str})
+                if not df.empty and "Lat" in df.columns:
+                    self._stations_df = df[["StationID", "StationName", "Lat", "Lon"]]
+                    return self._stations_df
+            except Exception:
+                pass
+            try:
+                url = f"{GITHUB_RAW_BASE}/static/stations.json?v={cache_busting}"
+                with urllib.request.urlopen(url) as resp:
+                    data = json.loads(resp.read().decode())
+                records = [{"StationID": s.get("StationID"),
+                            "StationName": s.get("StationName", {}).get("Zh_tw"),
+                            "Lat": s.get("StationPosition", {}).get("PositionLat"),
+                            "Lon": s.get("StationPosition", {}).get("PositionLon")}
+                           for s in data.get("Stations", [])]
+                self._stations_df = pd.DataFrame(records)
+                return self._stations_df
+            except Exception:
+                self._stations_df = pd.DataFrame()
+                return self._stations_df
+
         path = os.path.join(self.data_dir, "static", "stations.json")
         if not os.path.exists(path):
             self._stations_df = pd.DataFrame()
@@ -271,42 +300,49 @@ class DataProcessor:
         return self._load_line_network()
 
     def _load_shape(self) -> dict:
-        """
-        載入路線幾何（WKT LineString），回傳 {LineID: {"lons": [...], "lats": [...], "name": str}} dict。
-        雲端模式下若無本機檔案，回傳空 dict。
-        """
-        import re
+        import re, urllib.request
+
+        def _parse_shape_data(data) -> dict:
+            shapes = {}
+            for s in data.get("Shapes", []):
+                line_id = s.get("LineID", "")
+                line_name = s.get("LineName", {}).get("Zh_tw", line_id)
+                geom = s.get("Geometry", "")
+                coords_str = re.findall(r"LINESTRING\((.+)\)", geom, re.IGNORECASE)
+                if not coords_str:
+                    continue
+                try:
+                    pairs = [
+                        (float(c.strip().split()[0]), float(c.strip().split()[1]))
+                        for c in coords_str[0].split(",")
+                        if len(c.strip().split()) >= 2
+                    ]
+                    if not pairs:
+                        continue
+                    lons, lats = zip(*pairs)
+                    shapes[line_id] = {"lons": list(lons), "lats": list(lats), "name": line_name}
+                except Exception:
+                    continue
+            return shapes
+
+        # 雲端模式：從 GitHub raw 讀取
+        if CLOUD_MODE:
+            from datetime import datetime as _dt
+            cache_busting = int(_dt.now().timestamp())
+            try:
+                url = f"{GITHUB_RAW_BASE}/static/shape.json?v={cache_busting}"
+                with urllib.request.urlopen(url) as resp:
+                    data = json.loads(resp.read().decode())
+                return _parse_shape_data(data)
+            except Exception:
+                return {}
+
         path = os.path.join(self.data_dir, "static", "shape.json")
         if not os.path.exists(path):
             return {}
         with open(path, "r", encoding="utf-8") as f:
             data = json.load(f)
-
-        shapes = {}
-        for s in data.get("Shapes", []):
-            line_id = s.get("LineID", "")
-            line_name = s.get("LineName", {}).get("Zh_tw", line_id)
-            geom = s.get("Geometry", "")
-            coords_str = re.findall(r"LINESTRING\((.+)\)", geom, re.IGNORECASE)
-            if not coords_str:
-                continue
-            try:
-                pairs = [
-                    (float(c.strip().split()[0]), float(c.strip().split()[1]))
-                    for c in coords_str[0].split(",")
-                    if len(c.strip().split()) >= 2
-                ]
-                if not pairs:
-                    continue
-                lons, lats = zip(*pairs)
-                shapes[line_id] = {
-                    "lons": list(lons),
-                    "lats": list(lats),
-                    "name": line_name,
-                }
-            except Exception:
-                continue
-        return shapes
+        return _parse_shape_data(data)
 
     def get_shape(self) -> dict:
         return self._load_shape()
