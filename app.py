@@ -670,7 +670,7 @@ elif page == "站點熱力圖":
                 # ── 地圖繪製 ─────────────────────────────────────
                 if map_mode == "🔥 密度熱力圖":
                     # 以每筆原始紀錄（含重複加權）繪製密度
-                    fig = px.density_mapbox(
+                    fig = px.density_map(
                         map_df,
                         lat="Lat",
                         lon="Lon",
@@ -678,7 +678,7 @@ elif page == "站點熱力圖":
                         radius=28,
                         center=MAP_CENTER,
                         zoom=MAP_ZOOM,
-                        mapbox_style=MAP_STYLE,
+                        map_style=MAP_STYLE,
                         color_continuous_scale=COLOR_SCALE,
                         range_color=[0, map_df["DelayTime"].quantile(0.95)],
                         labels={"z": "誤點分鐘（加權）"},
@@ -686,7 +686,7 @@ elif page == "站點熱力圖":
                     )
                     # 疊加車站位置點（半透明）
                     fig.add_trace(
-                        go.Scattermapbox(
+                        go.Scattermap(
                             lat=station_map["Lat"],
                             lon=station_map["Lon"],
                             mode="markers+text",
@@ -707,7 +707,7 @@ elif page == "站點熱力圖":
                     )
 
                 elif map_mode == "🔵 氣泡誤點圖":
-                    fig = px.scatter_mapbox(
+                    fig = px.scatter_map(
                         station_map,
                         lat="Lat",
                         lon="Lon",
@@ -718,7 +718,7 @@ elif page == "站點熱力圖":
                         color_continuous_scale=COLOR_SCALE,
                         zoom=MAP_ZOOM,
                         center=MAP_CENTER,
-                        mapbox_style=MAP_STYLE,
+                        map_style=MAP_STYLE,
                         labels={color_col: hover_label},
                         custom_data=["StationName", "平均誤點", "誤點率_pct", "筆數"],
                     )
@@ -734,7 +734,7 @@ elif page == "站點熱力圖":
                 else:  # 📍 車站位置
                     fig = go.Figure()
                     fig.add_trace(
-                        go.Scattermapbox(
+                        go.Scattermap(
                             lat=station_map["Lat"],
                             lon=station_map["Lon"],
                             mode="markers+text",
@@ -762,7 +762,7 @@ elif page == "站點熱力圖":
                         )
                     )
                     fig.update_layout(
-                        mapbox=dict(
+                        map=dict(
                             style=MAP_STYLE,
                             center=MAP_CENTER,
                             zoom=MAP_ZOOM,
@@ -797,7 +797,7 @@ elif page == "站點熱力圖":
                         color_key = line_id.replace("TRA_", "")
                         line_color = LINE_COLORS.get(color_key, "#484f58")
                         fig.add_trace(
-                            go.Scattermapbox(
+                            go.Scattermap(
                                 lon=shape_data["lons"],
                                 lat=shape_data["lats"],
                                 mode="lines",
