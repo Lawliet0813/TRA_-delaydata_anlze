@@ -793,6 +793,7 @@ elif page == "站點熱力圖":
         _sid_sample = str(_work_df["StationID"].iloc[0]) if not _work_df.empty else "N/A"
         _coords_sid_sample = str(_stations_diag["StationID"].iloc[0]) if not _stations_diag.empty else "N/A"
         st.warning("座標資料載入失敗，無法顯示地圖。")
+        st.caption(f"_work_df columns: {list(_work_df.columns)}")
         st.caption(
             f"診斷：stations_coords={len(_stations_diag)}筆 | CLOUD_MODE={CLOUD_MODE} | "
             f"_work_df={len(_work_df)}筆 | "
