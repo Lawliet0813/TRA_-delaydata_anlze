@@ -2,30 +2,39 @@ name: TRA Crawler 自動排程
 
 on:
   schedule:
-    # 每日台灣 06:00 (UTC 22:00) 抓時刻表
-    - cron: '0 22 * * *'
-    # 每 10 分鐘抓即時看板（台灣 06:00-23:59 = UTC 22:00-15:59）
-    - cron: '*/10 22-23,0-15 * * *'
-    # 每 60 分鐘抓 alert（台灣 06:00-23:59）
-    - cron: '0 22-23,0-15 * * *'
-  workflow_dispatch:  # 手動觸發
+    # job: live ── 每 10 分鐘抓即時看板（台灣 06:00-24:00 = UTC 22:00-16:00）
+    - cron: '*/10 22-23,0-16 * * *'
+    # job: hourly ── 每小時整點：export CSV + alert（台灣 06:00-24:00）
+    - cron: '0 22-23,0-16 * * *'
+    # job: daily ── 每日台灣 06:05 抓時刻表 + 車站靜態資料
+    - cron: '5 22 * * *'
+  workflow_dispatch:
+    inputs:
+      force_task:
+        description: '強制執行任務（live / alert / timetable / export / all）'
+        required: false
+        default: 'live'
 
 env:
   TDX_CLIENT_ID: ${{ secrets.TDX_CLIENT_ID }}
   TDX_CLIENT_SECRET: ${{ secrets.TDX_CLIENT_SECRET }}
 
+# ── Job 1：即時看板（每 10 分鐘）────────────────────────────────
 jobs:
-  crawl:
+  live:
+    name: 即時看板 StationLiveBoard
     runs-on: ubuntu-latest
+    # 只在「非整點」的 10 分鐘排程觸發，或手動指定 live/all 時執行
+    # 整點由 hourly job 負責，避免重複
+    if: |
+      github.event_name == 'workflow_dispatch' && (github.event.inputs.force_task == 'live' || github.event.inputs.force_task == 'all') ||
+      github.event_name == 'schedule'
     permissions:
       contents: write
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
           cache: 'pip'
@@ -33,54 +42,138 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Determine task
-        id: task
+      - name: Create .env
         run: |
-          HOUR=$(TZ='Asia/Taipei' date +%H)
-          MINUTE=$(TZ='Asia/Taipei' date +%M)
-          # 每日 06:00 同時抓時刻表 + 即時資料
-          if [ "$HOUR" = "06" ] && [ "$MINUTE" -lt "5" ]; then
-            echo "task=all_data" >> $GITHUB_OUTPUT
-          else
-            echo "task=live" >> $GITHUB_OUTPUT
-          fi
-          # 整點時抓 alert
-          if [ "$MINUTE" -lt "5" ]; then
-            echo "run_alert=true" >> $GITHUB_OUTPUT
-          else
-            echo "run_alert=false" >> $GITHUB_OUTPUT
-          fi
+          echo "TDX_CLIENT_ID=${{ secrets.TDX_CLIENT_ID }}" > .env
+          echo "TDX_CLIENT_SECRET=${{ secrets.TDX_CLIENT_SECRET }}" >> .env
+
+      - name: Crawl live data
+        run: python main.py live
+
+      - name: Commit & Push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/station_live/ -f
+          git diff --cached --quiet || {
+            TIMESTAMP=$(TZ='Asia/Taipei' date '+%Y-%m-%d %H:%M')
+            git commit -m "🤖 auto-crawl: ${TIMESTAMP}"
+            git push
+          }
+
+# ── Job 2：每小時整點 ── Alert + Export CSV ────────────────────
+  hourly:
+    name: 整點任務 Alert + Export
+    runs-on: ubuntu-latest
+    # 只在整點的 cron 觸發（cron '0 ...'），或手動指定時執行
+    # 用 MINUTE 做二次把關，避免被 */10 那條 cron 誤觸
+    if: |
+      github.event_name == 'workflow_dispatch' && (github.event.inputs.force_task == 'alert' || github.event.inputs.force_task == 'export' || github.event.inputs.force_task == 'all') ||
+      github.event_name == 'schedule'
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
 
       - name: Create .env
         run: |
           echo "TDX_CLIENT_ID=${{ secrets.TDX_CLIENT_ID }}" > .env
           echo "TDX_CLIENT_SECRET=${{ secrets.TDX_CLIENT_SECRET }}" >> .env
 
-      - name: Crawl timetable (daily at 06:00)
-        if: steps.task.outputs.task == 'all_data'
-        run: python main.py timetable
+      - name: Check if this is actually an hourly trigger
+        id: check_hour
+        run: |
+          MINUTE=$(TZ='Asia/Taipei' date +%M)
+          # 只有在整點前後 3 分鐘內才執行（排除 */10 誤觸）
+          if [ "$MINUTE" -lt "4" ] || [ "$MINUTE" -gt "56" ]; then
+            echo "is_hourly=true" >> $GITHUB_OUTPUT
+          else
+            echo "is_hourly=false" >> $GITHUB_OUTPUT
+          fi
 
-      - name: Crawl station data (daily at 06:00 or manual dispatch)
-        if: steps.task.outputs.task == 'all_data' || github.event_name == 'workflow_dispatch'
-        run: python main.py station
-
-      - name: Crawl live data
+      - name: Crawl live data (hourly snapshot)
+        if: steps.check_hour.outputs.is_hourly == 'true'
         run: python main.py live
 
-      - name: Crawl alert data (hourly)
-        if: steps.task.outputs.run_alert == 'true'
+      - name: Crawl alert data
+        if: steps.check_hour.outputs.is_hourly == 'true'
         run: python main.py alert
 
-      - name: Export CSV
+      - name: Export CSV (Streamlit Cloud 用)
+        if: steps.check_hour.outputs.is_hourly == 'true'
         run: python export_csv.py
 
       - name: Commit & Push
+        if: steps.check_hour.outputs.is_hourly == 'true'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add data/ -f
           git diff --cached --quiet || {
             TIMESTAMP=$(TZ='Asia/Taipei' date '+%Y-%m-%d %H:%M')
-            git commit -m "🤖 auto-crawl: ${TIMESTAMP}"
+            git commit -m "🤖 hourly: export+alert ${TIMESTAMP}"
+            git push
+          }
+
+# ── Job 3：每日 06:05 ── 時刻表 + 車站靜態資料 ────────────────
+  daily:
+    name: 每日靜態資料 Timetable + Station
+    runs-on: ubuntu-latest
+    if: |
+      github.event_name == 'workflow_dispatch' && (github.event.inputs.force_task == 'timetable' || github.event.inputs.force_task == 'all') ||
+      github.event_name == 'schedule'
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Create .env
+        run: |
+          echo "TDX_CLIENT_ID=${{ secrets.TDX_CLIENT_ID }}" > .env
+          echo "TDX_CLIENT_SECRET=${{ secrets.TDX_CLIENT_SECRET }}" >> .env
+
+      - name: Check if this is the daily 06:05 trigger
+        id: check_daily
+        run: |
+          HOUR=$(TZ='Asia/Taipei' date +%H)
+          MINUTE=$(TZ='Asia/Taipei' date +%M)
+          if [ "$HOUR" = "06" ] && [ "$MINUTE" -lt "10" ]; then
+            echo "is_daily=true" >> $GITHUB_OUTPUT
+          else
+            echo "is_daily=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Crawl timetable
+        if: steps.check_daily.outputs.is_daily == 'true' || github.event_name == 'workflow_dispatch'
+        run: python main.py timetable
+
+      - name: Crawl station data
+        if: steps.check_daily.outputs.is_daily == 'true' || github.event_name == 'workflow_dispatch'
+        run: python main.py station
+
+      - name: Commit & Push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/timetable/ data/static/ -f
+          git diff --cached --quiet || {
+            TIMESTAMP=$(TZ='Asia/Taipei' date '+%Y-%m-%d')
+            git commit -m "📅 daily: timetable+station ${TIMESTAMP}"
             git push
           }
