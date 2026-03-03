@@ -151,7 +151,11 @@ def load_train_schedule():
     """載入首末班車時間表（train_schedule.csv）"""
     if CLOUD_MODE:
         from datetime import datetime as _dt
-        url = f"{processor.GITHUB_RAW_BASE}/train_schedule.csv?v={int(_dt.now().timestamp())}"
+        _base = os.environ.get(
+            "GITHUB_RAW_BASE",
+            "https://raw.githubusercontent.com/Lawliet0813/TRA_-delaydata_anlze/main/data/output"
+        )
+        url = f"{_base}/train_schedule.csv?v={int(_dt.now().timestamp())}"
         try:
             return pd.read_csv(url, dtype={"TrainNo": str})
         except Exception:
