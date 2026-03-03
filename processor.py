@@ -651,13 +651,13 @@ class DataProcessor:
 
         # 1. 車次×車站
         out1 = os.path.join(out_dir, "processed_data.csv")
-        df.to_csv(out1, index=False, encoding="utf-8-sig")
+        df.to_csv(out1, index=False, encoding="utf-8")
         print(f"[1] processed_data.csv：{len(df)} 筆")
 
         # 2. 車次終點（IsTerminal==1 那筆）
         train_df = df[df["IsTerminal"] == 1].copy()
         out2 = os.path.join(out_dir, "train_level.csv")
-        train_df.to_csv(out2, index=False, encoding="utf-8-sig")
+        train_df.to_csv(out2, index=False, encoding="utf-8")
         print(f"[2] train_level.csv：{len(train_df)} 筆")
 
         # 3. 車站平均
@@ -670,7 +670,7 @@ class DataProcessor:
             agg_dict["StationName"] = ("StationName", "first")
         station_df = df.groupby("StationID").agg(**agg_dict).reset_index()
         out3 = os.path.join(out_dir, "station_level.csv")
-        station_df.to_csv(out3, index=False, encoding="utf-8-sig")
+        station_df.to_csv(out3, index=False, encoding="utf-8")
         print(f"[3] station_level.csv：{len(station_df)} 站")
 
         return out_dir
