@@ -383,6 +383,13 @@ if page == "首頁":
                               xaxis_title=None, yaxis_title=None,
                               showlegend=False)
             st.plotly_chart(fig, use_container_width=True)
+            with st.expander("📊 說明", expanded=False):
+                st.markdown("""
+                **計算方式**：統計各車種在資料集中出現的筆數（每筆 = 一班次在一車站的到站紀錄）。
+
+                **資料來源**：交通部 TDX 平台 `StationLiveBoard` API，每 10 分鐘自動抓取一次，
+                由 `processor.parse_live_board()` 解析並彙整，`TrainType` 欄位經 `_simplify_type()` 函式統一分類。
+                """)
         else:
             st.warning("尚無資料")
 
@@ -468,6 +475,9 @@ elif page == "數據總覽":
                 - 莒光 → **莒光**
 
                 > 停靠站越多的車種（如區間車）誤點累積機會較高，直接比較時需留意路徑長度差異。
+
+                **資料來源**：交通部 TDX 平台 `StationLiveBoard` API，每 10 分鐘抓取一次；
+                `DelayTime` 欄位為 TDX 直接回傳之誤點分鐘數（與表定時間比較），由 `processor.parse_live_board()` 彙整。
                 """)
 
         with col_b:
@@ -496,6 +506,8 @@ elif page == "數據總覽":
                     - **離峰**：其餘時段
 
                     **準點率計算**：`(1 − IsDelayed.mean()) × 100%`，門檻 τ = 2 分鐘
+
+                    **資料來源**：交通部 TDX `StationLiveBoard` API；`Period` 欄位由 `processor.build_research_dataset()` 依 `ScheduleArrivalTime` 衍生；準點率門檻 τ = 2 分鐘參考日本 JR 及英國 Network Rail 統計標準。
                     """)
 
         st.markdown("---")
@@ -513,7 +525,7 @@ elif page == "數據總覽":
             st.plotly_chart(fig, use_container_width=True)
             with st.expander("📊 說明", expanded=False):
                 st.markdown("""
-                **資料來源**：`DelayTime` 欄位（TDX 直接回傳，單位：分鐘）。
+                **資料來源**：交通部 TDX 平台 `StationLiveBoard` API，`DelayTime` 欄位為 TDX 直接回傳之誤點分鐘數（整數，與表定到站時間比較），由 `processor.parse_live_board()` 彙整。
 
                 為避免極端值壓縮圖形，**截斷顯示 ≤ 30 分鐘**的觀測值，
                 超過 30 分鐘的異常誤點仍納入 KPI 計算，僅此圖不呈現。
@@ -543,6 +555,8 @@ elif page == "數據總覽":
                     - **平日**：週一至週五非國定假日
                     - **週末**：週六/週日
                     - **國定假日**：行政院公告補班補課日除外
+
+                    **資料來源**：交通部 TDX `StationLiveBoard` API 彙整資料；假日判定依行政院人事行政總處公告之國定假日日期，由 `_is_holiday()` 函式處理。
                     """)
 
         st.markdown("---")
@@ -571,6 +585,8 @@ elif page == "數據總覽":
             可透過游標懸停查看精確數值。
 
             > 此圖不受側邊欄日期篩選影響，固定呈現累積資料期間的完整趨勢。
+
+            **資料來源**：交通部 TDX `StationLiveBoard` API，自研究開始日期起每日持續累積，本圖固定顯示所有已蒐集日期的完整趨勢（不受日期篩選影響）。
             """)
 
 
@@ -683,7 +699,11 @@ elif page == "準點率分析":
             else:
                 st.info("終點站紀錄不足，請累積更多資料後再查看。")
             with st.expander("📊 說明", expanded=False):
-                st.markdown("**台鐵官方統計方式**：只統計在終點站（`IsTerminal=1`）的到站紀錄，`DelayTime ≥ 5 分鐘`才算誤點，與台鐵每月公告的準點率計算方式相同。")
+                st.markdown("""
+                **台鐵官方統計方式**：只統計在終點站（`IsTerminal=1`）的到站紀錄，`DelayTime ≥ 5 分鐘`才算誤點，與台鐵每月公告的準點率計算方式相同。
+
+                **資料來源**：交通部 TDX `StationLiveBoard` API；`IsTerminal` 欄位由 `processor` 對照 TDX 時刻表（`/Rail/TRA/GeneralTimetable`）比對終點站判定；官方準點率定義參考臺鐵每月營運統計月報。
+                """)
 
         with col_b:
             st.markdown("## 各車種：本研究全站準點率")
@@ -698,7 +718,11 @@ elif page == "準點率分析":
                                xaxis=dict(**AXIS_STYLE, range=[80, 100]))
             st.plotly_chart(fig2, use_container_width=True)
             with st.expander("📊 說明", expanded=False):
-                st.markdown("**本研究全站統計方式**：涵蓋所有停靠站（含中途各站）的到站紀錄，`DelayTime ≥ 2 分鐘`即算誤點，比台鐵官方統計更能反映旅客在中途站的實際等候情形。")
+                st.markdown("""
+                **本研究全站統計方式**：涵蓋所有停靠站（含中途各站）的到站紀錄，`DelayTime ≥ 2 分鐘`即算誤點，比台鐵官方統計更能反映旅客在中途站的實際等候情形。
+
+                **資料來源**：交通部 TDX `StationLiveBoard` API，每 10 分鐘抓取一次；準點率門檻 τ = 2 分鐘參考日本 JR 東日本及英國 Network Rail 的統計標準。
+                """)
 
         st.markdown("---")
         st.markdown("## 各時段 × 車種準點率交叉比較")
@@ -722,6 +746,8 @@ elif page == "準點率分析":
                 尖峰時段班距短、列車密度高，一旦某班車延誤，後面的班次很容易跟著卡住；
                 長程車種（自強、莒光）停靠站多，中途累積誤點的機會也比較高。
                 這張圖同時呈現時段（X3）與車種（X1）的交叉效應，對應本研究的核心研究假設。
+
+                **資料來源**：交通部 TDX `StationLiveBoard` API；`Period`（時段）欄位由 `ScheduleArrivalTime` 衍生，`TrainType`（車種）欄位經 `_simplify_type()` 統一分類。
                 """)
 
         st.markdown("---")
@@ -742,6 +768,8 @@ elif page == "準點率分析":
                 連假或連續假期旅運量明顯增加，但台鐵的班次數不一定同步加開，
                 旅客上下車時間拉長、站停時間超秒，就容易讓誤點一站一站往後傳。
                 此圖對應研究設計中假日變數（X4）的單變數視覺化。
+
+                **資料來源**：交通部 TDX `StationLiveBoard` API；`HolidayType` 欄位由 `_is_holiday()` 函式依行政院人事行政總處公告假日判定。
                 """)
 
 
@@ -1030,6 +1058,14 @@ elif page == "站點熱力圖":
                         )
 
                 st.plotly_chart(fig, use_container_width=True)
+                with st.expander("📊 資料來源說明", expanded=False):
+                    st.markdown("""
+                    **誤點資料**：交通部 TDX `StationLiveBoard` API，每 10 分鐘自動抓取一次，`DelayTime` 為 TDX 回傳之誤點分鐘數。
+
+                    **車站座標**：交通部 TDX `Station` API（`/Rail/TRA/Station`），存於 `static/stations.json`，由 `processor.get_stations_data()` 載入，以 `StationID`（4 位補零）對照合併。
+
+                    **路線軌跡**：交通部 TDX `Shape` API（`/Rail/TRA/Shape`），存於 `static/shape.json`，由 `processor.get_shape()` 載入，疊加於地圖上顯示台鐵各線路線走向。
+                    """)
 
                 # ── 下方統計面板 ─────────────────────────────────
                 st.markdown("---")
@@ -1091,6 +1127,12 @@ elif page == "站點熱力圖":
                         title="Top 10 高誤點車站",
                     )
                     st.plotly_chart(fig_bar, use_container_width=True)
+                    with st.expander("📊 說明", expanded=False):
+                        st.markdown("""
+                        **計算方式**：依 `StationName` 聚合，取各站 `DelayTime` 算術平均，選取前 10 名。
+
+                        **資料來源**：交通部 TDX `StationLiveBoard` API；車站座標來自 TDX `Station` API（`static/stations.json`）。
+                        """)
 
                 # ── 車站誤點分布（直方圖）────────────────────────
                 st.markdown("---")
@@ -1110,6 +1152,12 @@ elif page == "站點熱力圖":
                     yaxis=dict(**AXIS_STYLE, title="車站數"),
                 )
                 st.plotly_chart(fig_hist, use_container_width=True)
+                with st.expander("📊 說明", expanded=False):
+                    st.markdown("""
+                    **計算方式**：先對每個車站的 `DelayTime` 取算術平均，再將各站平均誤點值繪製成直方圖，橫軸為平均誤點分鐘數，縱軸為車站數量。
+
+                    **資料來源**：交通部 TDX `StationLiveBoard` API；車站座標來自 TDX `Station` API（`static/stations.json`）。
+                    """)
 
 # ══════════════════════════════════════════════════════════════
 #  ≋  OLS 迴歸
@@ -1246,6 +1294,16 @@ elif page == "OLS 迴歸":
             fig.add_vline(x=0, line_dash="dash", line_color="#21262d", line_width=1)
             fig.update_layout(**PLOTLY_THEME, height=300, xaxis_title="係數估計值（95% CI）")
             st.plotly_chart(fig, use_container_width=True)
+            with st.expander("📊 說明", expanded=False):
+                st.markdown("""
+                **圖形說明**：每個點代表一個自變數的 OLS/Logit 估計係數（β），橫條為 95% 信賴區間（±1.96 × 標準誤）。
+                🟢 綠色點 = 正向效果（誤點增加）、🔴 紅色點 = 負向效果（誤點減少）。
+                橫條跨越 0 虛線者表示該變數在統計上不顯著。
+
+                **資料來源**：交通部 TDX `StationLiveBoard` API 彙整後的研究資料集（`research_dataset.csv`），
+                由 `processor.build_research_dataset()` 建構，包含各班次 × 車站層級的面板資料。
+                迴歸分析使用 Python `statsmodels` 套件執行。
+                """)
 
             with st.expander("📄 完整 statsmodels Summary"):
                 st.text(model.summary().as_text())
@@ -1290,8 +1348,13 @@ elif page == "異常通報":
                 legend=dict(bgcolor="rgba(0,0,0,0)", font=dict(color="#8b949e", size=11)),
             )
             st.plotly_chart(fig, use_container_width=True)
+            with st.expander("📊 說明", expanded=False):
+                st.markdown("""
+                **計算方式**：依 `Category`（原因類別）欄位計算各類別件數佔比。
 
-        with c2:
+                **資料來源**：交通部 TDX `Alert` API（`/Rail/TRA/Alert`），存於 `data/alerts/` 目錄，
+                由 `processor.parse_alerts()` 解析；`Category` 欄位為本研究依通報內文關鍵字自動分類。
+                """)
             st.markdown("## 各類原因定義")
             defs = processor.reason_definitions
             for cat, desc in defs.items():

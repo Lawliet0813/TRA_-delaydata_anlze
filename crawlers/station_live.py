@@ -1,8 +1,9 @@
 """
 StationLiveCrawler — 新核心即時爬蟲。
 
-對應 TDX /StationLiveBoard 端點，每 3 分鐘抓取全台各站即時到離站資訊。
-存檔至 data/raw/station_live/YYYY-MM-DD/HHMMSS.json
+# 資料界接來源：https://tdx.transportdata.tw/api/basic/v3/Rail/TRA/StationLiveBoard
+# 提供臺鐵列車即時到離站資料（各車站目前停靠列車的到站/離站時間與誤點分鐘數），
+# 每 10 分鐘自動抓取一次，存檔至 data/raw/station_live/YYYY-MM-DD/HHMMSS.json
 """
 
 from crawlers.base import BaseCrawler

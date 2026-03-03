@@ -1,6 +1,9 @@
 """
 Shape 路線幾何爬蟲：抓取 TRA 各路線的 WKT LineString。
-對應 TDX /Shape 端點，存檔至 data/static/shape.json（靜態，路線不常變動）。
+
+# 資料界接來源：https://tdx.transportdata.tw/api/basic/v3/Rail/TRA/Shape
+# 提供臺鐵各路線的地理幾何軌跡資料（WKT LineString 格式），
+# 用於地圖上疊加路線走向，為靜態資料，存檔至 data/static/shape.json。
 """
 from crawlers.base import BaseCrawler
 

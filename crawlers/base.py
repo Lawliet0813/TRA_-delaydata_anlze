@@ -28,7 +28,10 @@ class BaseCrawler(ABC):
     # ── API 呼叫 ──────────────────────────────────────────────
 
     def fetch(self) -> dict:
-        """呼叫 TDX API 並回傳 JSON dict。"""
+        """呼叫 TDX API 並回傳 JSON dict。
+        資料界接來源：BASE_URL + self.endpoint（定義於各子類別），
+        例如 /StationLiveBoard 提供臺鐵列車即時到離站資料。
+        """
         url = f"{BASE_URL}{self.endpoint}"
         params = {"$format": "JSON"}
         resp = requests.get(url, headers=auth_header(), params=params)

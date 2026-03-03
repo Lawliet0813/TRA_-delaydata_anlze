@@ -1,8 +1,9 @@
 """
 GeneralTrainTimetable 時刻表爬蟲。
 
-對應 TDX /DailyTrainTimetable/Today 端點，
-存檔至 data/timetable/YYYY-MM-DD.json（每日一檔）。
+# 資料界接來源：https://tdx.transportdata.tw/api/basic/v3/Rail/TRA/DailyTrainTimetable/Today
+# 提供臺鐵當日所有列車完整停靠站時刻表（各車次、各站到離站表定時間、終點站等），
+# 每日更新一次，存檔至 data/timetable/YYYY-MM-DD.json（每日一檔）。
 """
 
 from datetime import datetime

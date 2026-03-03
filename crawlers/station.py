@@ -1,7 +1,9 @@
 """
 Station 靜態車站資料爬蟲。
 
-對應 TDX /Station 端點，存檔至 data/static/stations.json（固定覆寫）。
+# 資料界接來源：https://tdx.transportdata.tw/api/basic/v3/Rail/TRA/Station
+# 提供臺鐵各車站靜態基本資料（車站代碼、中文站名、經緯度座標等），
+# 為靜態資料，存檔至 data/static/stations.json（固定覆寫）。
 """
 
 from crawlers.base import BaseCrawler
