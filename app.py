@@ -1058,6 +1058,14 @@ elif page == "站點熱力圖":
                         )
 
                 st.plotly_chart(fig, use_container_width=True)
+                with st.expander("📊 資料來源說明", expanded=False):
+                    st.markdown("""
+                    **誤點資料**：交通部 TDX `StationLiveBoard` API，每 10 分鐘自動抓取一次，`DelayTime` 為 TDX 回傳之誤點分鐘數。
+
+                    **車站座標**：交通部 TDX `Station` API（`/Rail/TRA/Station`），存於 `static/stations.json`，由 `processor.get_stations_data()` 載入，以 `StationID`（4 位補零）對照合併。
+
+                    **路線軌跡**：交通部 TDX `Shape` API（`/Rail/TRA/Shape`），存於 `static/shape.json`，由 `processor.get_shape()` 載入，疊加於地圖上顯示台鐵各線路線走向。
+                    """)
 
                 # ── 下方統計面板 ─────────────────────────────────
                 st.markdown("---")
@@ -1119,6 +1127,12 @@ elif page == "站點熱力圖":
                         title="Top 10 高誤點車站",
                     )
                     st.plotly_chart(fig_bar, use_container_width=True)
+                    with st.expander("📊 說明", expanded=False):
+                        st.markdown("""
+                        **計算方式**：依 `StationName` 聚合，取各站 `DelayTime` 算術平均，選取前 10 名。
+
+                        **資料來源**：交通部 TDX `StationLiveBoard` API；車站座標來自 TDX `Station` API（`static/stations.json`）。
+                        """)
 
                 # ── 車站誤點分布（直方圖）────────────────────────
                 st.markdown("---")
@@ -1138,6 +1152,12 @@ elif page == "站點熱力圖":
                     yaxis=dict(**AXIS_STYLE, title="車站數"),
                 )
                 st.plotly_chart(fig_hist, use_container_width=True)
+                with st.expander("📊 說明", expanded=False):
+                    st.markdown("""
+                    **計算方式**：先對每個車站的 `DelayTime` 取算術平均，再將各站平均誤點值繪製成直方圖，橫軸為平均誤點分鐘數，縱軸為車站數量。
+
+                    **資料來源**：交通部 TDX `StationLiveBoard` API；車站座標來自 TDX `Station` API（`static/stations.json`）。
+                    """)
 
 # ══════════════════════════════════════════════════════════════
 #  ≋  OLS 迴歸
@@ -1274,6 +1294,16 @@ elif page == "OLS 迴歸":
             fig.add_vline(x=0, line_dash="dash", line_color="#21262d", line_width=1)
             fig.update_layout(**PLOTLY_THEME, height=300, xaxis_title="係數估計值（95% CI）")
             st.plotly_chart(fig, use_container_width=True)
+            with st.expander("📊 說明", expanded=False):
+                st.markdown("""
+                **圖形說明**：每個點代表一個自變數的 OLS/Logit 估計係數（β），橫條為 95% 信賴區間（±1.96 × 標準誤）。
+                🟢 綠色點 = 正向效果（誤點增加）、🔴 紅色點 = 負向效果（誤點減少）。
+                橫條跨越 0 虛線者表示該變數在統計上不顯著。
+
+                **資料來源**：交通部 TDX `StationLiveBoard` API 彙整後的研究資料集（`research_dataset.csv`），
+                由 `processor.build_research_dataset()` 建構，包含各班次 × 車站層級的面板資料。
+                迴歸分析使用 Python `statsmodels` 套件執行。
+                """)
 
             with st.expander("📄 完整 statsmodels Summary"):
                 st.text(model.summary().as_text())
@@ -1318,8 +1348,13 @@ elif page == "異常通報":
                 legend=dict(bgcolor="rgba(0,0,0,0)", font=dict(color="#8b949e", size=11)),
             )
             st.plotly_chart(fig, use_container_width=True)
+            with st.expander("📊 說明", expanded=False):
+                st.markdown("""
+                **計算方式**：依 `Category`（原因類別）欄位計算各類別件數佔比。
 
-        with c2:
+                **資料來源**：交通部 TDX `Alert` API（`/Rail/TRA/Alert`），存於 `data/alerts/` 目錄，
+                由 `processor.parse_alerts()` 解析；`Category` 欄位為本研究依通報內文關鍵字自動分類。
+                """)
             st.markdown("## 各類原因定義")
             defs = processor.reason_definitions
             for cat, desc in defs.items():
