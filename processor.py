@@ -649,6 +649,23 @@ class DataProcessor:
         out_dir = os.path.join(self.data_dir, "output")
         os.makedirs(out_dir, exist_ok=True)
 
+        # 補入 StationName（從 stations.json）
+        if "StationName" not in df.columns:
+            try:
+                static_path = os.path.join(self.data_dir, "static", "stations.json")
+                with open(static_path, "r", encoding="utf-8") as f:
+                    raw = json.load(f)
+                stations_list = raw.get("Stations", raw) if isinstance(raw, dict) else raw
+                name_map = {}
+                for s in stations_list:
+                    zh = s["StationName"]["Zh_tw"]
+                    jid = s["StationID"]          # e.g. '0900'
+                    name_map[jid] = zh            # '0900' -> 基隆
+                    name_map[str(int(jid))] = zh  # '900'  -> 基隆
+                df["StationName"] = df["StationID"].astype(str).map(name_map)
+            except Exception as e:
+                print(f"[warn] StationName merge failed: {e}")
+
         # 1. 車次×車站
         out1 = os.path.join(out_dir, "processed_data.csv")
         df.to_csv(out1, index=False, encoding="utf-8")
