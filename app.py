@@ -247,7 +247,35 @@ with st.sidebar:
         df, research_df = load_data()
         st.rerun()
 
+    # ── 日期篩選器 ────────────────────────────────────────────
+    st.markdown("<div style='margin-top:20px; border-top:1px solid #21262d; padding-top:16px;'></div>", unsafe_allow_html=True)
+    st.markdown('<div style="font-size:0.72rem; color:#8b949e; letter-spacing:1px; text-transform:uppercase; margin-bottom:8px;">DATE FILTER</div>', unsafe_allow_html=True)
+
+    if not df.empty and "Date" in df.columns:
+        _available_dates = sorted(df["Date"].dropna().unique().tolist(), reverse=True)
+        _date_options = ["全部日期"] + _available_dates
+        selected_date = st.selectbox(
+            "選擇日期",
+            options=_date_options,
+            index=0,
+            label_visibility="collapsed",
+            key="date_filter",
+        )
+    else:
+        selected_date = "全部日期"
+        st.markdown('<div style="font-size:0.75rem; color:#8b949e;">尚無資料</div>', unsafe_allow_html=True)
+
 page = st.session_state.nav
+
+# ── 依日期篩選全域 DataFrame ──────────────────────────────────
+if not df.empty and "Date" in df.columns and selected_date != "全部日期":
+    filtered_df = df[df["Date"] == selected_date].copy()
+    filtered_research_df = research_df[research_df["Date"] == selected_date].copy() if not research_df.empty and "Date" in research_df.columns else research_df.copy()
+    _date_label = f"📅 {selected_date}"
+else:
+    filtered_df = df.copy()
+    filtered_research_df = research_df.copy()
+    _date_label = "📅 全部日期"
 
 # ══════════════════════════════════════════════════════════════
 #  ⬡  首頁
@@ -372,23 +400,37 @@ elif page == "數據總覽":
     </div>
     """, unsafe_allow_html=True)
 
-    if df.empty:
-        st.warning("尚無資料，請確認資料蒐集排程正常運作。")
+    _ddf = filtered_df  # 使用日期篩選後的資料
+    st.caption(f"目前顯示範圍：{_date_label}　共 {len(_ddf):,} 筆觀測")
+
+    if _ddf.empty:
+        st.warning("此日期無資料，請重新選擇。")
     else:
         # KPI 列
         c1, c2, c3, c4, c5 = st.columns(5)
-        c1.metric("觀測筆數", f"{len(df):,}")
-        c2.metric("準點率", f"{round((1-df['IsDelayed'].mean())*100,1)} %")
-        c3.metric("平均誤點", f"{round(df['DelayTime'].mean(),2)} min")
-        c4.metric("最大誤點", f"{int(df['DelayTime'].max())} min")
-        c5.metric("資料天數", f"{df['Date'].nunique()} 天")
+        c1.metric("觀測筆數", f"{len(_ddf):,}")
+        c2.metric("準點率", f"{round((1-_ddf['IsDelayed'].mean())*100,1)} %")
+        c3.metric("平均誤點", f"{round(_ddf['DelayTime'].mean(),2)} min")
+        c4.metric("最大誤點", f"{int(_ddf['DelayTime'].max())} min")
+        c5.metric("資料天數", f"{_ddf['Date'].nunique()} 天")
+
+        with st.expander("📊 指標說明", expanded=False):
+            st.markdown("""
+            | 指標 | 計算方式 | 備註 |
+            |------|----------|------|
+            | **觀測筆數** | 每筆 = 一班次在一個車站的到站紀錄 | 由 TDX `StationLiveBoard` 每 10 分鐘抓取彙整 |
+            | **準點率** | `(1 − IsDelayed.mean()) × 100%` | `IsDelayed = 1` 當 `DelayTime ≥ 2分鐘`（本研究門檻，參考日英標準） |
+            | **平均誤點** | `DelayTime` 欄位算術平均（含 0 分鐘正常班次） | 單位：分鐘 |
+            | **最大誤點** | `DelayTime` 欄位最大值 | 單位：分鐘 |
+            | **資料天數** | `Date` 欄位不重複日期數 | YYYY-MM-DD 格式 |
+            """)
 
         st.markdown("---")
         col_a, col_b = st.columns(2, gap="large")
 
         with col_a:
             st.markdown("## 各車種平均誤點")
-            type_d = df.groupby("TrainType")["DelayTime"].mean().sort_values(ascending=True).reset_index()
+            type_d = _ddf.groupby("TrainType")["DelayTime"].mean().sort_values(ascending=True).reset_index()
             fig = go.Figure(go.Bar(
                 x=type_d["DelayTime"], y=type_d["TrainType"],
                 orientation="h",
@@ -398,11 +440,24 @@ elif page == "數據總覽":
             ))
             fig.update_layout(**PLOTLY_THEME, height=260, xaxis_title="平均誤點（分鐘）")
             st.plotly_chart(fig, use_container_width=True)
+            with st.expander("📊 說明", expanded=False):
+                st.markdown("""
+                **計算方式**：依 `TrainType`（車種）分組，對所有停靠站紀錄的 `DelayTime` 取算術平均。
+
+                車種分類邏輯（`_simplify_type()`）：
+                - 太魯閣 / 普悠瑪 → **傾斜式自強**
+                - 自強（其他）→ **自強**
+                - 區間快 → **區間快**
+                - 區間 → **區間**
+                - 莒光 → **莒光**
+
+                > 停靠站越多的車種（如區間車）誤點累積機會較高，直接比較時需留意路徑長度差異。
+                """)
 
         with col_b:
             st.markdown("## 各時段準點率")
-            if "Period" in df.columns:
-                period_d = df.groupby("Period")["IsDelayed"].apply(
+            if "Period" in _ddf.columns:
+                period_d = _ddf.groupby("Period")["IsDelayed"].apply(
                     lambda x: round((1-x.mean())*100,1)).reset_index(name="準點率")
                 order = ["深夜", "離峰", "尖峰"]
                 period_d["Period"] = pd.Categorical(period_d["Period"], categories=order, ordered=True)
@@ -417,13 +472,22 @@ elif page == "數據總覽":
                                   yaxis=dict(**AXIS_STYLE, range=[85, 100]),
                                   yaxis_title="準點率 (%)")
                 st.plotly_chart(fig, use_container_width=True)
+                with st.expander("📊 說明", expanded=False):
+                    st.markdown("""
+                    **時段分類**（依表定到站時間 `ScheduleArrivalTime` 衍生）：
+                    - **尖峰**：06:00–09:00 及 17:00–20:00
+                    - **深夜**：00:00–06:00
+                    - **離峰**：其餘時段
+
+                    **準點率計算**：`(1 − IsDelayed.mean()) × 100%`，門檻 τ = 2 分鐘
+                    """)
 
         st.markdown("---")
         col_c, col_d = st.columns(2, gap="large")
 
         with col_c:
             st.markdown("## 誤點分鐘數分布")
-            delay_clip = df[df["DelayTime"] <= 30]["DelayTime"]
+            delay_clip = _ddf[_ddf["DelayTime"] <= 30]["DelayTime"]
             fig = go.Figure(go.Histogram(
                 x=delay_clip, nbinsx=30,
                 marker_color=GREEN, opacity=0.8,
@@ -431,11 +495,21 @@ elif page == "數據總覽":
             fig.update_layout(**PLOTLY_THEME, height=240,
                               xaxis_title="誤點分鐘（截至30分）", yaxis_title="筆數")
             st.plotly_chart(fig, use_container_width=True)
+            with st.expander("📊 說明", expanded=False):
+                st.markdown("""
+                **資料來源**：`DelayTime` 欄位（TDX 直接回傳，單位：分鐘）。
+
+                為避免極端值壓縮圖形，**截斷顯示 ≤ 30 分鐘**的觀測值，
+                超過 30 分鐘的異常誤點仍納入 KPI 計算，僅此圖不呈現。
+
+                > 分布高度右偏（大量 0 分鐘記錄）為台鐵誤點資料的典型型態，
+                  適合使用負二項迴歸或零膨脹模型處理。
+                """)
 
         with col_d:
             st.markdown("## 假日 vs 平日")
-            if "HolidayType" in df.columns:
-                hol_d = df.groupby("HolidayType").agg(
+            if "HolidayType" in _ddf.columns:
+                hol_d = _ddf.groupby("HolidayType").agg(
                     準點率=("IsDelayed", lambda x: round((1-x.mean())*100,1)),
                     平均誤點=("DelayTime", lambda x: round(x.mean(),2)),
                     筆數=("IsDelayed", "count")
@@ -444,6 +518,16 @@ elif page == "數據總覽":
                     hol_d.style.format({"準點率": "{:.1f}%", "平均誤點": "{:.2f} min", "筆數": "{:,}"}),
                     use_container_width=True, hide_index=True
                 )
+                with st.expander("📊 說明", expanded=False):
+                    st.markdown("""
+                    **假日判定**（`IsHoliday` 欄位，`_is_holiday()` 函式）：
+                    依台灣政府公告國定假日日期及週六/日判定。
+
+                    `HolidayType` 細分為：
+                    - **平日**：週一至週五非國定假日
+                    - **週末**：週六/週日
+                    - **國定假日**：行政院公告補班補課日除外
+                    """)
 
         st.markdown("---")
         st.markdown("## 逐日準點率趨勢")
@@ -462,6 +546,16 @@ elif page == "數據總覽":
                           yaxis=dict(**AXIS_STYLE, range=[85, 100]),
                           yaxis_title="準點率 (%)")
         st.plotly_chart(fig, use_container_width=True)
+        st.caption("※ 逐日趨勢圖固定顯示全部日期，不受上方日期篩選影響，以保留完整時間序列視圖。")
+        with st.expander("📊 說明", expanded=False):
+            st.markdown("""
+            **計算方式**：依每天（`Date`）分組，計算當日所有停靠站記錄的準點率。
+
+            Y 軸範圍固定為 85%–100% 以放大差異。若某日準點率低於 85% 將截斷於底部，
+            可透過游標懸停查看精確數值。
+
+            > 此圖不受側邊欄日期篩選影響，固定呈現累積資料期間的完整趨勢。
+            """)
 
 
 # ══════════════════════════════════════════════════════════════
@@ -475,11 +569,14 @@ elif page == "準點率分析":
     </div>
     """, unsafe_allow_html=True)
 
-    if df.empty:
-        st.warning("尚無資料")
+    _pdf = filtered_df  # 使用日期篩選後的資料
+    st.caption(f"目前顯示範圍：{_date_label}　共 {len(_pdf):,} 筆觀測")
+
+    if _pdf.empty:
+        st.warning("此日期無資料，請重新選擇。")
     else:
-        terminal_df = df[df["IsLastRecord"] == 1] if "IsLastRecord" in df.columns else pd.DataFrame()
-        inter_pct = round((1 - df["IsDelayed"].mean()) * 100, 2)  # τ=2分，路網站間
+        terminal_df = _pdf[_pdf["IsLastRecord"] == 1] if "IsLastRecord" in _pdf.columns else pd.DataFrame()
+        inter_pct = round((1 - _pdf["IsDelayed"].mean()) * 100, 2)  # τ=2分，路網站間
         # 終點代理使用官方口徑（τ=5分），若欄位不存在則 fallback 到 IsDelayed
         if not terminal_df.empty:
             delay_col = "IsDelayed_Official" if "IsDelayed_Official" in terminal_df.columns else "IsDelayed"
@@ -513,7 +610,7 @@ elif page == "準點率分析":
 
         with col_a:
             st.markdown("## 各車種：路網站間準點率")
-            d = df.groupby("TrainType")["IsDelayed"].apply(
+            d = _pdf.groupby("TrainType")["IsDelayed"].apply(
                 lambda x: round((1-x.mean())*100,1)).reset_index(name="準點率").sort_values("準點率")
             fig = go.Figure(go.Bar(
                 x=d["準點率"], y=d["TrainType"], orientation="h",
@@ -523,6 +620,13 @@ elif page == "準點率分析":
             fig.update_layout(**PLOTLY_THEME, height=240,
                               xaxis=dict(**AXIS_STYLE, range=[80, 100]))
             st.plotly_chart(fig, use_container_width=True)
+            with st.expander("📊 說明", expanded=False):
+                st.markdown("""
+                **路網站間準點率**：所有停靠站記錄（非僅終點）的準點率，門檻 **τ = 2 分鐘**。
+
+                此為本研究自定義指標，反映全路網每個停靠點的服務品質，
+                比僅看終點站更能捕捉中途延誤累積的現象。
+                """)
 
         with col_b:
             st.markdown("## 各車種：終點代理準點率")
@@ -539,11 +643,18 @@ elif page == "準點率分析":
                 fig2.update_layout(**PLOTLY_THEME, height=240,
                                    xaxis=dict(**AXIS_STYLE, range=[80, 100]))
                 st.plotly_chart(fig2, use_container_width=True)
+                with st.expander("📊 說明", expanded=False):
+                    st.markdown("""
+                    **終點代理準點率**：每班次**最後一筆**抓取記錄的準點率，門檻 **τ = 5 分鐘**。
+
+                    由於 TDX API 的特性（列車抵終點後從即時板消失），
+                    以每班次當天最後一筆記錄作為終點代理，門檻對齊台鐵官方月報口徑（5分鐘）。
+                    """)
 
         st.markdown("---")
         st.markdown("## 各時段 × 車種準點率交叉比較")
-        if "Period" in df.columns:
-            cross = df.groupby(["Period", "TrainType"])["IsDelayed"].apply(
+        if "Period" in _pdf.columns:
+            cross = _pdf.groupby(["Period", "TrainType"])["IsDelayed"].apply(
                 lambda x: round((1-x.mean())*100,1)).reset_index(name="準點率")
             fig3 = px.bar(
                 cross, x="Period", y="準點率", color="TrainType",
@@ -555,11 +666,18 @@ elif page == "準點率分析":
                                yaxis=dict(**AXIS_STYLE, range=[75, 100]),
                                legend=dict(bgcolor="rgba(0,0,0,0)", font=dict(color="#8b949e")))
             st.plotly_chart(fig3, use_container_width=True)
+            with st.expander("📊 說明", expanded=False):
+                st.markdown("""
+                **交叉分析**：同時考慮「時段（X3）」與「車種（X1）」兩個自變數。
+
+                可觀察特定車種在尖峰時段是否有更顯著的準點率下降，
+                對應研究假設：**尖峰時段加上長程列車（自強/莒光）交叉效應最大**。
+                """)
 
         st.markdown("---")
         st.markdown("## 假日效應")
-        if "HolidayType" in df.columns:
-            hol = df.groupby(["HolidayType", "TrainType"])["IsDelayed"].apply(
+        if "HolidayType" in _pdf.columns:
+            hol = _pdf.groupby(["HolidayType", "TrainType"])["IsDelayed"].apply(
                 lambda x: round((1-x.mean())*100,1)).reset_index(name="準點率")
             fig4 = px.bar(hol, x="HolidayType", y="準點率", color="TrainType",
                           barmode="group", color_discrete_sequence=COLORS)
@@ -567,6 +685,13 @@ elif page == "準點率分析":
                                yaxis=dict(**AXIS_STYLE, range=[75, 100]),
                                legend=dict(bgcolor="rgba(0,0,0,0)", font=dict(color="#8b949e")))
             st.plotly_chart(fig4, use_container_width=True)
+            with st.expander("📊 說明", expanded=False):
+                st.markdown("""
+                **假日效應（X4 IsHoliday）**：比較平日、週末、國定假日三種情境下各車種的準點率差異。
+
+                假日旅運量增加但班次密度不一定增加，可能造成旅客上下車時間拉長、誤點累積。
+                此圖對應研究設計中 X4（假日）的單變數視覺化。
+                """)
 
 
 # ══════════════════════════════════════════════════════════════
@@ -580,8 +705,21 @@ elif page == "站點熱力圖":
     </div>
     """, unsafe_allow_html=True)
 
-    # 主動補充座標（即使 df 不含 Lat/Lon，也嘗試從 processor 取得）
-    _work_df = df.copy() if not df.empty else pd.DataFrame()
+    st.caption(f"目前顯示範圍：{_date_label}")
+    with st.expander("📊 地圖模式說明", expanded=False):
+        st.markdown("""
+        | 模式 | 說明 | 適合用途 |
+        |------|------|----------|
+        | **🔥 密度熱力圖** | 以每筆原始紀錄的 `DelayTime` 為權重，顯示誤點能量的地理密度 | 找出全台誤點熱點區域 |
+        | **🔵 氣泡誤點圖** | 每個車站聚合成一個氣泡，顏色深淺和大小代表平均誤點或誤點率 | 比較各站間的誤點差異 |
+        | **📍 車站位置** | 純地理分布，不含誤點資訊 | 確認資料涵蓋的車站範圍 |
+
+        **聚合方式（氣泡圖）**：依 `StationName + Lat + Lon` 分組，計算：
+        - 平均誤點 = `DelayTime.mean()`
+        - 誤點率 = `IsDelayed.mean() × 100%`（門檻 τ = 2 分鐘）
+        - 顏色梯度：🟢 綠（低）→ 🟡 黃（中）→ 🔴 紅（高）
+        """)
+    _work_df = filtered_df.copy() if not filtered_df.empty else pd.DataFrame()
     if not _work_df.empty and ("Lat" not in _work_df.columns or _work_df["Lat"].isna().all()):
         _stations_coords = processor.get_stations_data()
         if not _stations_coords.empty:
@@ -903,8 +1041,33 @@ elif page == "OLS 迴歸":
     </div>
     """, unsafe_allow_html=True)
 
-    if research_df.empty or len(research_df) < 30:
-        st.warning(f"資料量不足（目前 {len(research_df):,} 筆），建議累積至少 1,000 筆後執行迴歸。")
+    _rdf = filtered_research_df  # 使用日期篩選後的研究資料集
+    st.caption(f"目前顯示範圍：{_date_label}　共 {len(_rdf):,} 筆觀測")
+
+    with st.expander("📊 模型設計說明", expanded=False):
+        st.markdown("""
+        **應變數（Y）**：
+        - **OLS**：`DelayTime`（連續，誤點分鐘數）
+        - **Logit**：`IsDelayed`（二元，τ = 2 分鐘）
+
+        **自變數（X）與對應研究假設**：
+
+        | 變數 | 欄位 | 說明 |
+        |------|------|------|
+        | 車種（X1） | `IsZiQiang` 等虛擬變數 | 基準組 = 區間；傾斜式自強為最高速車種 |
+        | 停靠順序（X2） | `StopSeq` | 停靠越後面累積誤點越多 |
+        | 尖峰時段（X3） | `IsPeak` | 尖峰班距緊，誤點傳遞效應強 |
+        | 假日（X4） | `IsHoliday` | 旅運量增加，停靠時間延長 |
+        | 前站誤點（X9） | `PrevDelay` | 誤點傳遞，最強預測因子 |
+
+        **顯著性判定**：`*** p<0.001`、`** p<0.01`、`* p<0.05`、`† p<0.1`
+
+        **係數圖解讀**：橫條中心點 = β 估計值，橫條長度 = 95% 信賴區間（±1.96 × SE）。
+        跨越 0 的橫條表示該變數在統計上不顯著影響誤點。
+        """)
+
+    if _rdf.empty or len(_rdf) < 30:
+        st.warning(f"資料量不足（目前 {len(_rdf):,} 筆），建議累積至少 1,000 筆後執行迴歸。")
     else:
         col_info, col_run = st.columns([2, 1])
         with col_info:
@@ -923,7 +1086,7 @@ elif page == "OLS 迴歸":
         st.markdown("---")
 
         if run_ols or run_logit:
-            reg_df = research_df.dropna(
+            reg_df = _rdf.dropna(
                 subset=["DelayTime","StopSeq","PrevDelay","Period","TrainType","IsHoliday"]
             ).copy()
             reg_df["IsZiQiang"]    = (reg_df["TrainType"] == "自強").astype(int)
