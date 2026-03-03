@@ -207,14 +207,14 @@ def render(df: pd.DataFrame, **kwargs):
             "順行（基隆→高雄）" if str(direction_val) == "0" else
             "逆行（高雄→基隆）" if str(direction_val) == "1" else "-"
         )
-        first_arr = sub["ScheduledArr"].iloc[0]  if "ScheduledArr" in sub.columns else "-"
-        last_arr  = sub["ScheduledArr"].iloc[-1] if "ScheduledArr" in sub.columns else "-"
+        first_arr = sub["FirstDep"].iloc[0]  if "FirstDep" in sub.columns else "-"
+        last_arr  = sub["LastArr"].iloc[0]   if "LastArr"  in sub.columns else "-"
 
         meta_cols = st.columns(4)
         meta_cols[0].metric("車種", train_type)
         meta_cols[1].metric("行駛方向", direction_label)
-        meta_cols[2].metric("首站表定", first_arr)
-        meta_cols[3].metric("末站表定", last_arr)
+        meta_cols[2].metric("首班始發", first_arr)
+        meta_cols[3].metric("末班抵達", last_arr)
 
         st.markdown("<div style='margin-top:12px'></div>", unsafe_allow_html=True)
         _draw_kpi_row(sub)
