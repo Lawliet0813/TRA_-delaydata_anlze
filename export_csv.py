@@ -33,10 +33,12 @@ if not df.empty:
         ]
         stations_df = pd.DataFrame(station_records)
         if not stations_df.empty:
-            df["StationID"] = df["StationID"].astype(str)
-            stations_df["StationID"] = stations_df["StationID"].astype(str)
-            df = df.drop(columns=["Lat", "Lon"], errors="ignore")
-            df = df.merge(stations_df, on="StationID", how="left")
+            # ★ 修正：統一 StationID 補零到 4 位，確保 merge 格式一致
+            df["StationID"] = df["StationID"].astype(str).str.strip().str.zfill(4)
+            stations_df["StationID"] = stations_df["StationID"].astype(str).str.strip().str.zfill(4)
+            # ★ 修正：同時清除 Lat_x/Lon_x/Lat_y/Lon_y 殘留欄位
+            df = df.drop(columns=["Lat", "Lon", "Lat_x", "Lon_x", "Lat_y", "Lon_y"], errors="ignore")
+            df = df.merge(stations_df[["StationID", "Lat", "Lon"]], on="StationID", how="left")
 
         # 額外匯出 stations_coords.csv 供雲端模式使用
         coords_records = [
@@ -49,6 +51,8 @@ if not df.empty:
             for s in stations_data.get("Stations", [])
         ]
         coords_df = pd.DataFrame(coords_records)
+        # ★ 修正：stations_coords.csv 的 StationID 也統一補零
+        coords_df["StationID"] = coords_df["StationID"].astype(str).str.strip().str.zfill(4)
         coords_path = os.path.join(DATA_DIR, "stations_coords.csv")
         coords_df.to_csv(coords_path, index=False, encoding="utf-8-sig")
         print(f"stations_coords.csv saved: {len(coords_df)} 站")
