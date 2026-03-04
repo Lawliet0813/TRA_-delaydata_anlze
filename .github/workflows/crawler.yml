@@ -11,7 +11,7 @@ on:
   workflow_dispatch:
     inputs:
       force_task:
-        description: '強制執行任務（live / alert / timetable / export / station / all）'
+        description: '強制執行任務（live / alert / timetable / export / all）'
         required: false
         default: 'live'
 
@@ -175,40 +175,3 @@ jobs:
             git push
           }
 
-# ── Job 4：純手動 ── 靜態資料（一次性）────────────────────────
-  static:
-    name: 靜態資料 Station / Shape / LineNetwork（手動）
-    runs-on: ubuntu-latest
-    if: |
-      github.event_name == 'workflow_dispatch' && (github.event.inputs.force_task == 'station' || github.event.inputs.force_task == 'all')
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-          cache: 'pip'
-
-      - name: Install dependencies
-        run: pip install -r requirements.txt
-
-      - name: Create .env
-        run: |
-          echo "TDX_CLIENT_ID=${{ secrets.TDX_CLIENT_ID }}" > .env
-          echo "TDX_CLIENT_SECRET=${{ secrets.TDX_CLIENT_SECRET }}" >> .env
-
-      - name: Crawl station / shape / line network
-        run: python main.py station
-
-      - name: Commit & Push
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add data/static/ -f
-          git diff --cached --quiet || {
-            TIMESTAMP=$(TZ='Asia/Taipei' date '+%Y-%m-%d')
-            git commit -m "🗂️ static: station+shape+line ${TIMESTAMP}"
-            git push
-          }
