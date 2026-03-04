@@ -11,7 +11,7 @@ on:
   workflow_dispatch:
     inputs:
       force_task:
-        description: '強制執行任務（live / alert / timetable / export / all）'
+        description: '強制執行任務（live / alert / timetable / export / station / all）'
         required: false
         default: 'live'
 
@@ -123,9 +123,9 @@ jobs:
             git push
           }
 
-# ── Job 3：每日 06:05 ── 時刻表 + 車站靜態資料 ────────────────
+# ── Job 3：每日 06:05 ── 時刻表（每日）────────────────────────
   daily:
-    name: 每日靜態資料 Timetable + Station
+    name: 每日時刻表 Timetable
     runs-on: ubuntu-latest
     if: |
       github.event_name == 'workflow_dispatch' && (github.event.inputs.force_task == 'timetable' || github.event.inputs.force_task == 'all') ||
@@ -148,40 +148,67 @@ jobs:
           echo "TDX_CLIENT_ID=${{ secrets.TDX_CLIENT_ID }}" > .env
           echo "TDX_CLIENT_SECRET=${{ secrets.TDX_CLIENT_SECRET }}" >> .env
 
-      - name: Check trigger type
+      - name: Check if this is the daily 06:05 trigger
         id: check_daily
         run: |
           HOUR=$(TZ='Asia/Taipei' date +%H)
           MINUTE=$(TZ='Asia/Taipei' date +%M)
-          DOW=$(TZ='Asia/Taipei' date +%u)   # 1=Mon ... 7=Sun
-          if [ "$HOUR" = "06" ] && [ "$MINUTE" -lt "10" ]; then
+          if [ "$HOUR" = "06" ] && [ "$MINUTE" -lt "15" ]; then
             echo "is_daily=true" >> $GITHUB_OUTPUT
           else
             echo "is_daily=false" >> $GITHUB_OUTPUT
           fi
-          # 靜態資料（Station / Shape）只在週一執行
-          if [ "$DOW" = "1" ] && [ "$HOUR" = "06" ] && [ "$MINUTE" -lt "10" ]; then
-            echo "is_weekly=true" >> $GITHUB_OUTPUT
-          else
-            echo "is_weekly=false" >> $GITHUB_OUTPUT
-          fi
 
-      - name: Crawl timetable (daily)
+      - name: Crawl timetable
         if: steps.check_daily.outputs.is_daily == 'true' || github.event_name == 'workflow_dispatch'
         run: python main.py timetable
-
-      - name: Crawl station + shape data (weekly, Mon only)
-        if: steps.check_daily.outputs.is_weekly == 'true' || github.event_name == 'workflow_dispatch'
-        run: python main.py station
 
       - name: Commit & Push
         if: steps.check_daily.outputs.is_daily == 'true' || github.event_name == 'workflow_dispatch'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add data/timetable/ data/static/ -f
+          git add data/timetable/ -f
           git diff --cached --quiet || {
             TIMESTAMP=$(TZ='Asia/Taipei' date '+%Y-%m-%d')
-            git commit -m "📅 daily: timetable+station ${TIMESTAMP}"
+            git commit -m "📅 daily: timetable ${TIMESTAMP}"
+            git push
+          }
+
+# ── Job 4：純手動 ── 靜態資料（一次性）────────────────────────
+  static:
+    name: 靜態資料 Station / Shape / LineNetwork（手動）
+    runs-on: ubuntu-latest
+    if: |
+      github.event_name == 'workflow_dispatch' && (github.event.inputs.force_task == 'station' || github.event.inputs.force_task == 'all')
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Create .env
+        run: |
+          echo "TDX_CLIENT_ID=${{ secrets.TDX_CLIENT_ID }}" > .env
+          echo "TDX_CLIENT_SECRET=${{ secrets.TDX_CLIENT_SECRET }}" >> .env
+
+      - name: Crawl station / shape / line network
+        run: python main.py station
+
+      - name: Commit & Push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/static/ -f
+          git diff --cached --quiet || {
+            TIMESTAMP=$(TZ='Asia/Taipei' date '+%Y-%m-%d')
+            git commit -m "🗂️ static: station+shape+line ${TIMESTAMP}"
             git push
           }
