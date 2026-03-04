@@ -3,7 +3,7 @@ import os
 import glob
 import pandas as pd
 import numpy as np
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 
 # ── 雲端模式偵測 ──────────────────────────────────────────────
 # 若環境變數 STREAMLIT_CLOUD=1，則從 GitHub raw 讀取 CSV
@@ -392,6 +392,11 @@ class DataProcessor:
                     data = json.load(fp)
                 date_folder = os.path.basename(os.path.dirname(f))
                 crawl_time = os.path.basename(f).replace(".json", "")
+                try:
+                    utc_dt = datetime.strptime(f"{date_folder} {crawl_time}", "%Y-%m-%d %H%M%S")
+                    taiwan_date = (utc_dt + timedelta(hours=8)).strftime("%Y-%m-%d")
+                except Exception:
+                    taiwan_date = date_folder
                 for r in data.get(root_key, []):
                     # ScheduleArrivalTime 格式為 HH:MM:SS，取前 5 碼統一為 HH:MM
                     arr_raw = r.get("ScheduleArrivalTime", "")
@@ -400,6 +405,7 @@ class DataProcessor:
                     dep_hhmm = dep_raw[:5] if dep_raw else ""
                     records.append({
                         "Date": date_folder,
+                        "TaiwanDate": taiwan_date,
                         "CrawlTime": crawl_time,
                         "TrainNo": r.get("TrainNo"),
                         "StationID": r.get("StationID"),
@@ -444,8 +450,9 @@ class DataProcessor:
 
         # Period 由 ScheduledArr 衍生
         df["Period"] = df["ScheduledArr"].apply(_get_period)
-        df["IsHoliday"] = df["Date"].apply(_is_holiday)
-        df["HolidayType"] = df["Date"].apply(_holiday_type)
+        date_col = "TaiwanDate" if "TaiwanDate" in df.columns else "Date"
+        df["IsHoliday"] = df[date_col].apply(_is_holiday)
+        df["HolidayType"] = df[date_col].apply(_holiday_type)
         return df
 
 
@@ -561,7 +568,8 @@ class DataProcessor:
         def safe_date(ds):
             try: return datetime.strptime(ds, "%Y-%m-%d")
             except: return None
-        df["_dt"] = df["Date"].apply(safe_date)
+        date_col = "TaiwanDate" if "TaiwanDate" in df.columns else "Date"
+        df["_dt"] = df[date_col].apply(safe_date)
         df["Weekday"] = df["_dt"].apply(lambda d: d.weekday() if d else np.nan)
         df["Month"] = df["_dt"].apply(lambda d: d.month if d else np.nan)
         df.drop(columns=["_dt"], inplace=True)
@@ -621,7 +629,7 @@ class DataProcessor:
 
         # ── 整理輸出欄位 ──
         cols = [
-            "Date", "Weekday", "Month",
+            "Date", "TaiwanDate", "Weekday", "Month",
             "TrainNo", "TrainType", "Direction", "TripLine",
             "StationID", "StationName", "StopSeq",
             "ScheduledArr", "FirstDep", "LastArr",
@@ -721,4 +729,4 @@ class DataProcessor:
                     })
             except:
                 pass
-        return pd.DataFrame(records).drop_duplicates()
+        return pd.DataFrame(records).drop_duplicates(subset=["PublishTime", "Description"])
