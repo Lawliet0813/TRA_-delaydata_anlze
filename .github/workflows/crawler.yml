@@ -148,23 +148,30 @@ jobs:
           echo "TDX_CLIENT_ID=${{ secrets.TDX_CLIENT_ID }}" > .env
           echo "TDX_CLIENT_SECRET=${{ secrets.TDX_CLIENT_SECRET }}" >> .env
 
-      - name: Check if this is the daily 06:05 trigger
+      - name: Check trigger type
         id: check_daily
         run: |
           HOUR=$(TZ='Asia/Taipei' date +%H)
           MINUTE=$(TZ='Asia/Taipei' date +%M)
+          DOW=$(TZ='Asia/Taipei' date +%u)   # 1=Mon ... 7=Sun
           if [ "$HOUR" = "06" ] && [ "$MINUTE" -lt "10" ]; then
             echo "is_daily=true" >> $GITHUB_OUTPUT
           else
             echo "is_daily=false" >> $GITHUB_OUTPUT
           fi
+          # 靜態資料（Station / Shape）只在週一執行
+          if [ "$DOW" = "1" ] && [ "$HOUR" = "06" ] && [ "$MINUTE" -lt "10" ]; then
+            echo "is_weekly=true" >> $GITHUB_OUTPUT
+          else
+            echo "is_weekly=false" >> $GITHUB_OUTPUT
+          fi
 
-      - name: Crawl timetable
+      - name: Crawl timetable (daily)
         if: steps.check_daily.outputs.is_daily == 'true' || github.event_name == 'workflow_dispatch'
         run: python main.py timetable
 
-      - name: Crawl station data
-        if: steps.check_daily.outputs.is_daily == 'true' || github.event_name == 'workflow_dispatch'
+      - name: Crawl station + shape data (weekly, Mon only)
+        if: steps.check_daily.outputs.is_weekly == 'true' || github.event_name == 'workflow_dispatch'
         run: python main.py station
 
       - name: Commit & Push
