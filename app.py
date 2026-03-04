@@ -222,7 +222,7 @@ if not CLOUD_MODE:
     )
 
 if page == "首頁":
-    page_home.render(df)
+    page_home.render(df, filtered_df=filtered_df, date_label=_date_label)
 elif page == "數據總覽":
     page_overview.render(df, filtered_df=filtered_df, date_label=_date_label)
 elif page == "準點率分析":

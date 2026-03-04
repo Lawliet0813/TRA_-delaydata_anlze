@@ -147,9 +147,9 @@ def render(df, filtered_df, date_label, **kwargs):
                 連假旅運量增加可能延長站停時間。
                 """)
 
-    # ── Daily Trend ───────────────────────────────────────────
+    # ── Daily Trend（固定顯示全量，並標示目前選取日期） ────────
     st.markdown("---")
-    section_title("逐日準點率趨勢")
+    section_title("逐日準點率趨勢　　⚠ 此圖固定顯示全部日期")
     daily = df.groupby("Date")["IsDelayed"].apply(
         lambda x: round((1-x.mean())*100, 1)).reset_index(name="準點率")
     fig = go.Figure()
@@ -160,9 +160,22 @@ def render(df, filtered_df, date_label, **kwargs):
         marker=dict(size=6, color=BLUE),
         fill="tozeroy",
         fillcolor="rgba(59,130,246,0.06)",
+        name="全部日期",
     ))
+    # 若有篩選日期，在該日加入標記
+    sel_daily = _ddf.groupby("Date")["IsDelayed"].apply(
+        lambda x: round((1-x.mean())*100, 1)).reset_index(name="準點率")
+    if len(sel_daily) < len(daily):
+        fig.add_trace(go.Scatter(
+            x=sel_daily["Date"], y=sel_daily["準點率"],
+            mode="markers",
+            marker=dict(size=11, color="#f59e0b", symbol="diamond",
+                        line=dict(width=2, color="#0a0e14")),
+            name=f"篩選中：{date_label}",
+        ))
     fig.update_layout(**PLOTLY_THEME, height=220,
                       yaxis=dict(**AXIS_STYLE, range=[85, 100], title="準點率 (%)"),
-                      xaxis=dict(**AXIS_STYLE))
+                      xaxis=dict(**AXIS_STYLE),
+                      legend=dict(bgcolor="rgba(0,0,0,0)", font=dict(size=11)))
     st.plotly_chart(fig, use_container_width=True)
-    st.caption("※ 逐日趨勢圖固定顯示全部日期，不受日期篩選影響。")
+    st.caption("※ 折線固定顯示全部日期趨勢；若已選取特定日期，黃色菱形標示該日位置。")
