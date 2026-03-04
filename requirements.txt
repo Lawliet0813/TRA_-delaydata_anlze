@@ -2,7 +2,7 @@ requests
 python-dotenv
 streamlit>=1.32.0
 pandas
-plotly
+plotly>=5.18.0
 statsmodels
 scikit-learn
 numpy
