@@ -7,7 +7,7 @@ from views.theme import PLOTLY_THEME, AXIS_STYLE, COLORS, BLUE, GREEN, TEXT_SECO
 from views.components import page_header, kpi_card, section_title, method_step
 
 
-def render(df, **kwargs):
+def render(df, filtered_df=None, date_label="📅 全部日期", **kwargs):
     # ── Hero ──────────────────────────────────────────────────
     st.markdown("""
     <div class="hero">
@@ -17,19 +17,22 @@ def render(df, **kwargs):
     </div>
     """, unsafe_allow_html=True)
 
-    # ── Live KPIs ─────────────────────────────────────────────
-    if not df.empty:
-        total = len(df)
-        pct_rate = round((1 - df["IsDelayed"].mean()) * 100, 1)
-        avg_delay = round(df["DelayTime"].mean(), 2)
-        days = df["Date"].nunique()
-        date_range = f'{df["Date"].min()} ~ {df["Date"].max()}'
+    # ── Live KPIs（依日期篩選器同步） ─────────────────────────
+    _kdf = filtered_df if (filtered_df is not None and not filtered_df.empty) else df
+    if not _kdf.empty:
+        total = len(_kdf)
+        pct_rate = round((1 - _kdf["IsDelayed"].mean()) * 100, 1)
+        avg_delay = round(_kdf["DelayTime"].mean(), 2)
+        days = _kdf["Date"].nunique()
+        date_range = f'{_kdf["Date"].min()} ~ {_kdf["Date"].max()}'
+
+        st.caption(f"目前顯示範圍：{date_label}　共 {total:,} 筆觀測")
 
         c1, c2, c3, c4 = st.columns(4)
         with c1:
-            kpi_card("累積觀測筆數", f"{total:,}", "blue", "班次 × 車站紀錄")
+            kpi_card("觀測筆數", f"{total:,}", "blue", "班次 × 車站紀錄")
         with c2:
-            kpi_card("整體準點率", f"{pct_rate}%", "green", "τ = 2 分鐘")
+            kpi_card("準點率", f"{pct_rate}%", "green", "τ = 2 分鐘")
         with c3:
             kpi_card("平均誤點", f"{avg_delay} min", "yellow" if avg_delay > 1 else "green")
         with c4:

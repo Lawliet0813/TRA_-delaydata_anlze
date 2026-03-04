@@ -69,7 +69,7 @@ def render(df, filtered_df, date_label, **kwargs):
                           yaxis=dict(**AXIS_STYLE))
         st.plotly_chart(fig, use_container_width=True)
 
-        with st.expander("📊 說明"):
+        with st.expander("📊 說明", key="exp_traintype"):
             st.markdown("""
             依 `TrainType` 分組取 `DelayTime` 算術平均。
             顏色漸層：🟢 低誤點 → 🟡 中 → 🔴 高。
@@ -99,9 +99,9 @@ def render(df, filtered_df, date_label, **kwargs):
                               xaxis=dict(**AXIS_STYLE))
             st.plotly_chart(fig, use_container_width=True)
 
-            with st.expander("📊 說明"):
+            with st.expander("📊 說明", key="exp_period"):
                 st.markdown("""
-                **時段分類**（依 `ScheduleArrivalTime`）：
+                **時段分類**（依 `ScheduledArr`）：
                 - **尖峰**：06:00–09:00 及 17:00–20:00
                 - **深夜**：00:00–06:00
                 - **離峰**：其餘時段
@@ -123,7 +123,7 @@ def render(df, filtered_df, date_label, **kwargs):
                           yaxis=dict(**AXIS_STYLE, title="筆數"))
         st.plotly_chart(fig, use_container_width=True)
 
-        with st.expander("📊 說明"):
+        with st.expander("📊 說明", key="exp_histogram"):
             st.markdown("""
             為避免極端值壓縮圖形，截斷顯示 ≤ 30 分鐘。
             分布高度右偏為台鐵誤點資料的典型型態。
@@ -141,15 +141,15 @@ def render(df, filtered_df, date_label, **kwargs):
                 hol_d.style.format({"準點率": "{:.1f}%", "平均誤點": "{:.2f} min", "筆數": "{:,}"}),
                 use_container_width=True, hide_index=True
             )
-            with st.expander("📊 說明"):
+            with st.expander("📊 說明", key="exp_holiday"):
                 st.markdown("""
                 `HolidayType` 細分：**平日** / **週末** / **國定假日**。
                 連假旅運量增加可能延長站停時間。
                 """)
 
-    # ── Daily Trend ───────────────────────────────────────────
+    # ── Daily Trend（固定顯示全量，並標示目前選取日期） ────────
     st.markdown("---")
-    section_title("逐日準點率趨勢")
+    section_title("逐日準點率趨勢　　⚠ 此圖固定顯示全部日期")
     daily = df.groupby("Date")["IsDelayed"].apply(
         lambda x: round((1-x.mean())*100, 1)).reset_index(name="準點率")
     fig = go.Figure()
@@ -160,9 +160,22 @@ def render(df, filtered_df, date_label, **kwargs):
         marker=dict(size=6, color=BLUE),
         fill="tozeroy",
         fillcolor="rgba(59,130,246,0.06)",
+        name="全部日期",
     ))
+    # 若有篩選日期，在該日加入標記
+    sel_daily = _ddf.groupby("Date")["IsDelayed"].apply(
+        lambda x: round((1-x.mean())*100, 1)).reset_index(name="準點率")
+    if len(sel_daily) < len(daily):
+        fig.add_trace(go.Scatter(
+            x=sel_daily["Date"], y=sel_daily["準點率"],
+            mode="markers",
+            marker=dict(size=11, color="#f59e0b", symbol="diamond",
+                        line=dict(width=2, color="#0a0e14")),
+            name=f"篩選中：{date_label}",
+        ))
     fig.update_layout(**PLOTLY_THEME, height=220,
                       yaxis=dict(**AXIS_STYLE, range=[85, 100], title="準點率 (%)"),
-                      xaxis=dict(**AXIS_STYLE))
+                      xaxis=dict(**AXIS_STYLE),
+                      legend=dict(bgcolor="rgba(0,0,0,0)", font=dict(size=11)))
     st.plotly_chart(fig, use_container_width=True)
-    st.caption("※ 逐日趨勢圖固定顯示全部日期，不受日期篩選影響。")
+    st.caption("※ 折線固定顯示全部日期趨勢；若已選取特定日期，黃色菱形標示該日位置。")
