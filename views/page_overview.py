@@ -69,7 +69,7 @@ def render(df, filtered_df, date_label, **kwargs):
                           yaxis=dict(**AXIS_STYLE))
         st.plotly_chart(fig, use_container_width=True)
 
-        with st.expander("📊 說明"):
+        with st.expander("📊 說明", key="exp_traintype"):
             st.markdown("""
             依 `TrainType` 分組取 `DelayTime` 算術平均。
             顏色漸層：🟢 低誤點 → 🟡 中 → 🔴 高。
@@ -99,9 +99,9 @@ def render(df, filtered_df, date_label, **kwargs):
                               xaxis=dict(**AXIS_STYLE))
             st.plotly_chart(fig, use_container_width=True)
 
-            with st.expander("📊 說明"):
+            with st.expander("📊 說明", key="exp_period"):
                 st.markdown("""
-                **時段分類**（依 `ScheduleArrivalTime`）：
+                **時段分類**（依 `ScheduledArr`）：
                 - **尖峰**：06:00–09:00 及 17:00–20:00
                 - **深夜**：00:00–06:00
                 - **離峰**：其餘時段
@@ -123,7 +123,7 @@ def render(df, filtered_df, date_label, **kwargs):
                           yaxis=dict(**AXIS_STYLE, title="筆數"))
         st.plotly_chart(fig, use_container_width=True)
 
-        with st.expander("📊 說明"):
+        with st.expander("📊 說明", key="exp_histogram"):
             st.markdown("""
             為避免極端值壓縮圖形，截斷顯示 ≤ 30 分鐘。
             分布高度右偏為台鐵誤點資料的典型型態。
@@ -141,7 +141,7 @@ def render(df, filtered_df, date_label, **kwargs):
                 hol_d.style.format({"準點率": "{:.1f}%", "平均誤點": "{:.2f} min", "筆數": "{:,}"}),
                 use_container_width=True, hide_index=True
             )
-            with st.expander("📊 說明"):
+            with st.expander("📊 說明", key="exp_holiday"):
                 st.markdown("""
                 `HolidayType` 細分：**平日** / **週末** / **國定假日**。
                 連假旅運量增加可能延長站停時間。
