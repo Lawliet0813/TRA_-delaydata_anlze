@@ -228,7 +228,7 @@ with st.sidebar:
     <div style="font-size:0.75rem; color:#8b949e; margin-top:12px; line-height:1.8;">
         今日抓取　<span style="color:#e6edf3; font-family:IBM Plex Mono,monospace;">GitHub Actions</span><br>
         累積筆數　<span style="color:#e6edf3; font-family:IBM Plex Mono,monospace;">{len(df):,}</span> 筆<br>
-        資料範圍　<span style="color:#e6edf3; font-family:IBM Plex Mono,monospace;">{df['Date'].min() if not df.empty else '—'}</span>
+        資料範圍　<span style="color:#e6edf3; font-family:IBM Plex Mono,monospace;">{df['Date'].max() if not df.empty else '—'}</span>
     </div>
     """, unsafe_allow_html=True)
     else:
@@ -259,7 +259,7 @@ with st.sidebar:
     <div style="font-size:0.75rem; color:#8b949e; margin-top:12px; line-height:1.8;">
         今日抓取　<span style="color:#e6edf3; font-family:IBM Plex Mono,monospace;">{len(files_today)}</span> 次<br>
         累積筆數　<span style="color:#e6edf3; font-family:IBM Plex Mono,monospace;">{len(df):,}</span> 筆<br>
-        資料範圍　<span style="color:#e6edf3; font-family:IBM Plex Mono,monospace;">{df['Date'].min() if not df.empty else '—'}</span>
+        資料範圍　<span style="color:#e6edf3; font-family:IBM Plex Mono,monospace;">{df['Date'].max() if not df.empty else '—'}</span>
     </div>
     """, unsafe_allow_html=True)
 
@@ -698,7 +698,7 @@ elif page == "準點率分析":
                     marker_color=COLORS[:len(d)],
                     text=d["準點率"].astype(str)+"%", textposition="outside",
                 ))
-                fig.update_layout(**PLOTLY_THEME, height=240,
+                fig.update_layout(**PLOTLY_THEME, height=max(240, len(d)*40+80),
                                   xaxis=dict(**AXIS_STYLE, range=[80, 100]))
                 st.plotly_chart(fig, use_container_width=True)
             else:
@@ -719,7 +719,7 @@ elif page == "準點率分析":
                 marker_color=COLORS[:len(d2)],
                 text=d2["準點率"].astype(str)+"%", textposition="outside",
             ))
-            fig2.update_layout(**PLOTLY_THEME, height=240,
+            fig2.update_layout(**PLOTLY_THEME, height=max(240, len(d2)*40+80),
                                xaxis=dict(**AXIS_STYLE, range=[80, 100]))
             st.plotly_chart(fig2, use_container_width=True)
             with st.expander("📊 說明", expanded=False):

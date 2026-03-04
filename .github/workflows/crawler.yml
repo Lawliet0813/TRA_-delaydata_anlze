@@ -93,7 +93,7 @@ jobs:
         run: |
           MINUTE=$(TZ='Asia/Taipei' date +%M)
           # 只有在整點前後 3 分鐘內才執行（排除 */10 誤觸）
-          if [ "$MINUTE" -lt "4" ] || [ "$MINUTE" -gt "56" ]; then
+          if [ "$MINUTE" -lt "15" ] || [ "$MINUTE" -gt "56" ]; then
             echo "is_hourly=true" >> $GITHUB_OUTPUT
           else
             echo "is_hourly=false" >> $GITHUB_OUTPUT
