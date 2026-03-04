@@ -110,7 +110,7 @@ def _draw_delay_chart(sub: pd.DataFrame, title: str):
     # 5 分鐘基準線
     fig.add_hline(
         y=5, line_dash="dot", line_color=RED,
-        annotation_text="官方誤點門溻（5 min）",
+        annotation_text="官方誤點門檻（5 min）",
         annotation_font_color=RED,
         annotation_position="top right",
     )
