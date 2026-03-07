@@ -23,3 +23,6 @@ data/research_dataset.csv
 
 # logs
 *.log
+
+# SQLite 資料庫（執行期產生，不納入版控）
+*.db
