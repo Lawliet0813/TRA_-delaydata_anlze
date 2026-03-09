@@ -74,6 +74,20 @@ def _build_stop_detail(sub: pd.DataFrame, processor, train_no: str) -> pd.DataFr
     return detail.sort_values("StopSeq").reset_index(drop=True)
 
 
+def _format_delay_station_tags(sub: pd.DataFrame) -> list[str]:
+    if sub.empty or "DelayTime" not in sub.columns:
+        return []
+    delay_df = sub[sub["DelayTime"].fillna(0) >= 1].copy()
+    if delay_df.empty:
+        return []
+    name_col = "StationName" if "StationName" in delay_df.columns else "StationID"
+    return [
+        f"{row[name_col]} ({int(row['DelayTime'])} 分)"
+        for _, row in delay_df.iterrows()
+        if pd.notna(row.get(name_col))
+    ]
+
+
 # ══ 即時 API 呼叫 ══════════════════════════════════════════════════════════════
 
 def _fetch_train_live(train_no: str) -> pd.DataFrame:
@@ -162,6 +176,28 @@ def _draw_delay_chart(sub: pd.DataFrame, title: str):
         marker=dict(size=9, color=colors, line=dict(width=1.5, color="#0d1117")),
         hovertemplate="<b>%{x}</b><br>誤點：%{y} 分鐘<extra></extra>",
     ))
+    delayed = sub[sub["DelayTime"].fillna(0) >= 1].copy()
+    if not delayed.empty:
+        delayed["delay_label"] = delayed.apply(
+            lambda r: f"{r[name_col]} +{int(r['DelayTime'])}",
+            axis=1,
+        )
+        fig.add_trace(go.Scatter(
+            x=delayed["x_label"],
+            y=delayed["DelayTime"],
+            mode="markers+text",
+            text=delayed["delay_label"],
+            textposition="top center",
+            textfont=dict(size=10, color="#e6edf3"),
+            marker=dict(
+                size=13,
+                color=delayed["DelayTime"].apply(lambda d: RED if d >= 5 else AMBER),
+                symbol="diamond",
+                line=dict(width=1.5, color="#0d1117"),
+            ),
+            hovertemplate="<b>%{x}</b><br>誤點站：%{text}<extra></extra>",
+            showlegend=False,
+        ))
     # 5 分鐘基準線
     fig.add_hline(
         y=5, line_dash="dot", line_color=RED,
@@ -280,14 +316,26 @@ def render(df: pd.DataFrame, **kwargs):
         st.markdown("<div style='margin-top:12px'></div>", unsafe_allow_html=True)
         _draw_kpi_row(sub)
 
+        delay_tags = _format_delay_station_tags(sub)
+        if delay_tags:
+            st.markdown("**誤點站**")
+            st.caption(" · ".join(delay_tags))
+        else:
+            st.caption("全程各站皆為準點。")
+
         st.markdown("<div style='margin-top:12px'></div>", unsafe_allow_html=True)
         _draw_delay_chart(sub, f"{train_no} 次 {sel_date} 全程誤點（分鐘）")
 
         with st.expander("📋 完整停靠明細"):
             detail_df = _build_stop_detail(sub, processor, train_no)
+            detail_df = detail_df.copy()
+            if "DelayTime" in detail_df.columns:
+                detail_df["DelayStatus"] = detail_df["DelayTime"].apply(
+                    lambda d: "超標誤點" if pd.notna(d) and d >= 5 else ("輕微誤點" if pd.notna(d) and d >= 1 else "準點")
+                )
             show_cols = [c for c in [
                 "StopSeq", "StationName", "ScheduledArr", "ScheduledDep",
-                "DelayTime", "IsDelayed", "PrevDelay"
+                "DelayTime", "DelayStatus", "IsDelayed", "PrevDelay"
             ] if c in detail_df.columns]
             st.dataframe(
                 detail_df[show_cols].rename(columns={
@@ -296,6 +344,7 @@ def render(df: pd.DataFrame, **kwargs):
                     "ScheduledArr": "表定到站",
                     "ScheduledDep": "表定開車",
                     "DelayTime": "誤點(分)",
+                    "DelayStatus": "狀態",
                     "IsDelayed": "超標",
                     "PrevDelay": "前站誤點",
                 }),
