@@ -54,8 +54,17 @@ CSS = f"""
     color: {TEXT_PRIMARY};
 }}
 
-html, body, .stApp, .stMarkdown, p, span, div {{
+html, body, .stApp, .stMarkdown, p {{
     font-family: 'Inter', 'Noto Sans TC', sans-serif !important;
+}}
+
+/* Preserve Streamlit/Material icon glyphs; broad span/div font overrides break them. */
+[class*="material-symbols"] {{
+    font-family: "Material Symbols Rounded", "Material Symbols Outlined" !important;
+}}
+
+[class*="material-icons"] {{
+    font-family: "Material Icons" !important;
 }}
 
 h1, h2, h3, h4 {{
