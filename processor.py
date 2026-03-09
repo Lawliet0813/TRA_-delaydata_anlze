@@ -333,20 +333,35 @@ class DataProcessor:
         import re, urllib.request
 
         def _parse_shape_data(data) -> dict:
+            def _parse_geometry(geom: str):
+                if not geom:
+                    return []
+                multi_match = re.findall(r"MULTILINESTRING\s*\(\((.+)\)\)", geom, re.IGNORECASE)
+                if multi_match:
+                    coord_groups = re.split(r"\)\s*,\s*\(", multi_match[0])
+                else:
+                    line_match = re.findall(r"LINESTRING\s*\((.+)\)", geom, re.IGNORECASE)
+                    coord_groups = line_match if line_match else []
+
+                pairs = []
+                for group in coord_groups:
+                    for coord in group.split(","):
+                        parts = coord.strip().split()
+                        if len(parts) < 2:
+                            continue
+                        try:
+                            pairs.append((float(parts[0]), float(parts[1])))
+                        except Exception:
+                            continue
+                return pairs
+
             shapes = {}
             for s in data.get("Shapes", []):
                 line_id = s.get("LineID", "")
                 line_name = s.get("LineName", {}).get("Zh_tw", line_id)
                 geom = s.get("Geometry", "")
-                coords_str = re.findall(r"LINESTRING\((.+)\)", geom, re.IGNORECASE)
-                if not coords_str:
-                    continue
                 try:
-                    pairs = [
-                        (float(c.strip().split()[0]), float(c.strip().split()[1]))
-                        for c in coords_str[0].split(",")
-                        if len(c.strip().split()) >= 2
-                    ]
+                    pairs = _parse_geometry(geom)
                     if not pairs:
                         continue
                     lons, lats = zip(*pairs)

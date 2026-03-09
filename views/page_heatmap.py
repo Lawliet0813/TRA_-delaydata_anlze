@@ -14,13 +14,26 @@ MAP_ZOOM    = 6.5
 MAP_STYLE   = "carto-darkmatter"
 COLOR_SCALE = [GREEN, "#f59e0b", "#ef4444"]   # 綠→黃→紅
 LINE_COLORS = {
-    "WestTrunkLine":  BLUE,
-    "SeaLine":        "#f59e0b",
-    "EastTrunkLine":  GREEN,
-    "NorthLink":      "#ef4444",
-    "SouthLink":      "#a78bfa",
-    "PingTungLine":   "#22d3ee",
-    "TaiDongLine":    "#56d364",
+    "WL":    BLUE,
+    "WL-C":  "#f59e0b",
+    "WL-M":  "#eab308",
+    "TL":    BLUE,
+    "TL-C":  "#f59e0b",
+    "TL-M":  "#eab308",
+    "TL-N":  "#60a5fa",
+    "TL-S":  "#3b82f6",
+    "EL":    GREEN,
+    "YL":    "#34d399",
+    "NL":    "#ef4444",
+    "PL":    "#22d3ee",
+    "TT":    "#56d364",
+    "SL":    "#a78bfa",
+    "CZ":    "#94a3b8",
+    "JJ":    "#fb7185",
+    "LJ":    "#c084fc",
+    "NW":    "#f97316",
+    "PX":    "#f43f5e",
+    "SA":    "#06b6d4",
 }
 
 
@@ -39,17 +52,28 @@ def render(df, filtered_df, date_label, processor=None, **kwargs):
 
     _work_df = filtered_df.copy() if not filtered_df.empty else pd.DataFrame()
 
-    # 合併座標
+    # 正規化座標欄位：parse_station_live 已可能自帶 Lat/Lon，避免 merge 後變成 *_x/*_y
     if not _work_df.empty and processor:
         _stations_coords = processor.get_stations_data()
         if not _stations_coords.empty:
             _work_df["StationID"] = _work_df["StationID"].astype(str).str.strip().str.zfill(4)
             _stations_coords = _stations_coords.copy()
             _stations_coords["StationID"] = _stations_coords["StationID"].astype(str).str.strip().str.zfill(4)
-            _drop = [c for c in ["StationName", "Lat", "Lon"] if c not in _work_df.columns or _work_df[c].isna().all()]
-            _work_df = _work_df.drop(columns=_drop, errors="ignore")
+            for col in ["StationName", "Lat", "Lon"]:
+                if col not in _work_df.columns:
+                    _work_df[col] = pd.NA
             _coords_cols = ["StationID"] + [c for c in ["StationName", "Lat", "Lon"] if c in _stations_coords.columns]
-            _work_df = _work_df.merge(_stations_coords[_coords_cols], on="StationID", how="left")
+            _coord_lookup = _stations_coords[_coords_cols].drop_duplicates(subset=["StationID"])
+            _work_df = _work_df.merge(_coord_lookup, on="StationID", how="left", suffixes=("", "_coord"))
+            for col in ["StationName", "Lat", "Lon"]:
+                coord_col = f"{col}_coord"
+                if coord_col in _work_df.columns:
+                    _work_df[col] = _work_df[col].fillna(_work_df[coord_col])
+                    _work_df = _work_df.drop(columns=[coord_col])
+
+    for col in ["Lat", "Lon"]:
+        if col in _work_df.columns:
+            _work_df[col] = pd.to_numeric(_work_df[col], errors="coerce")
 
     if _work_df.empty or "Lat" not in _work_df.columns or _work_df["Lat"].isna().all():
         st.warning("座標資料載入失敗，無法顯示地圖。")
@@ -79,6 +103,7 @@ def render(df, filtered_df, date_label, processor=None, **kwargs):
 
     # ── Apply Filters ─────────────────────────────────────────
     map_df = _work_df.dropna(subset=["Lat", "Lon"]).copy()
+    map_df = map_df[map_df["DelayTime"].notna()].copy()
     if sel_types:
         map_df = map_df[map_df["TrainType"].isin(sel_types)]
     if sel_periods and "Period" in map_df.columns:
@@ -107,11 +132,14 @@ def render(df, filtered_df, date_label, processor=None, **kwargs):
 
     # ── Map rendering ─────────────────────────────────────────
     if map_mode == "🔥 密度熱力圖":
+        upper_bound = float(map_df["DelayTime"].quantile(0.95))
+        if upper_bound <= 0:
+            upper_bound = max(float(map_df["DelayTime"].max()), 1.0)
         fig = px.density_map(
             map_df, lat="Lat", lon="Lon", z="DelayTime",
             radius=28, center=MAP_CENTER, zoom=MAP_ZOOM,
             map_style=MAP_STYLE, color_continuous_scale=COLOR_SCALE,
-            range_color=[0, map_df["DelayTime"].quantile(0.95)],
+            range_color=[0, upper_bound],
             labels={"z": "誤點分鐘"},
         )
         fig.add_trace(go.Scattermap(
@@ -191,8 +219,7 @@ def render(df, filtered_df, date_label, processor=None, **kwargs):
         shapes = processor.get_shape()
         if shapes:
             for line_id, shape_data in shapes.items():
-                color_key = line_id.replace("TRA_", "")
-                line_color = LINE_COLORS.get(color_key, "#484f58")
+                line_color = LINE_COLORS.get(line_id, "#484f58")
                 fig.add_trace(go.Scattermap(
                     lon=shape_data["lons"], lat=shape_data["lats"],
                     mode="lines",
