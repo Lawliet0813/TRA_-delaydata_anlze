@@ -22,19 +22,46 @@ def render(df, filtered_research_df, date_label, **kwargs):
 
     with st.expander("📊 模型設計說明"):
         st.markdown("""
-        **應變數（Y）**：
-        - **OLS**：`DelayTime`（連續，誤點分鐘數）
-        - **Logit**：`IsDelayed`（二元，τ = 2 分鐘）
+        **分析單位**  
+        本頁以「車次 × 車站」為一筆觀測值，並套用目前頁面的日期篩選。只有同時具備
+        `DelayTime`、`StopSeq`、`PrevDelay`、`Period`、`TrainType`、`IsHoliday`
+        的資料會納入估計。
 
-        | 變數 | 欄位 | 說明 |
-        |------|------|------|
-        | 車種 (X1) | `IsZiQiang` 等 | 基準組 = 區間 |
-        | 停靠順序 (X2) | `StopSeq` | 累積誤點指標 |
-        | 尖峰 (X3) | `IsPeak` | 班距緊迫 |
-        | 假日 (X4) | `IsHoliday` | 旅運量增加 |
-        | 前站誤點 (X9) | `PrevDelay` | 傳遞效應 |
+        **模型目的**  
+        這一頁用兩種模型看同一組結構因素：
+        - **OLS**：估計哪些因素會讓誤點分鐘數增加或減少
+        - **Logit**：估計哪些因素會提高「是否誤點」的機率
 
-        **顯著性**：`*** p<0.001`、`** p<0.01`、`* p<0.05`、`† p<0.1`
+        **應變數（Y）**  
+        - **OLS**：`DelayTime`，連續變數，單位是分鐘
+        - **Logit**：`IsDelayed`，二元變數，這頁目前採用程式中的官方口徑：`DelayTime >= 5`
+
+        **模型形式**  
+        - **OLS**：`DelayTime = β0 + β1X1 + ... + βkXk + ε`
+        - **Logit**：`logit(P(IsDelayed=1)) = β0 + β1X1 + ... + βkXk`
+
+        **自變數編碼方式**
+
+        | 類型 | 欄位 / 轉換 | 說明 |
+        |------|-------------|------|
+        | 車種 (X1) | `IsZiQiang`、`IsQuJianKuai`、`IsTilt`、`IsJuGuang` | 虛擬變數；基準組為 `區間` |
+        | 停靠順序 (X2) | `StopSeq` | 數值變數；站序越後段，越能反映累積誤點 |
+        | 時段 (X3) | `IsPeak`、`IsNight` | 虛擬變數；基準組為 `離峰` |
+        | 假日 (X4) | `IsHoliday` | 0 = 平日，1 = 非平日（週末或國定假日） |
+        | 前站誤點 (X9) | `PrevDelay` | 數值變數；衡量誤點在相鄰站間的傳遞 |
+
+        **如何解讀係數**
+        - **OLS β 係數**：在其他變數固定下，該因素平均會讓 `DelayTime` 增減多少分鐘
+        - **Logit β 係數**：在其他變數固定下，該因素會讓誤點的對數勝算增加或減少
+        - 正值代表誤點風險或誤點程度上升，負值代表下降
+
+        **顯著性標記**  
+        `*** p<0.001`、`** p<0.01`、`* p<0.05`、`† p<0.1`
+
+        **注意事項**
+        - 本頁是關聯分析，不直接代表因果效果
+        - 類別變數都需要相對於基準組解讀
+        - Logit 的係數不是「機率增加幾 %」，若要更直觀解讀，需再轉成邊際效果或勝算比
         """)
 
     if sm is None:
@@ -52,7 +79,8 @@ def render(df, filtered_research_df, date_label, **kwargs):
         st.markdown(f"""
         <div style="font-size:0.85rem; color:{TEXT_SECONDARY}; line-height:1.8;">
         應變數：<code>DelayTime</code>（誤點分鐘數，連續）<br>
-        自變數：車種虛擬變數（基準：區間）、停靠順序、時段、假日、前站誤點
+        自變數：車種虛擬變數（基準：區間）、停靠順序、時段（基準：離峰）、假日、前站誤點<br>
+        樣本處理：僅使用關鍵欄位完整的觀測值，避免缺漏值直接進入模型
         </div>
         """, unsafe_allow_html=True)
     with col_run:
