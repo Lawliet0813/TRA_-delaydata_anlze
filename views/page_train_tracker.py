@@ -19,6 +19,61 @@ RED   = "#f85149"
 AMBER = "#f59e0b"
 
 
+def _lookup_schedule_meta(schedule_df: pd.DataFrame, train_no: str) -> dict:
+    if schedule_df is None or schedule_df.empty or "TrainNo" not in schedule_df.columns:
+        return {}
+    matched = schedule_df[schedule_df["TrainNo"].astype(str) == str(train_no)]
+    if matched.empty:
+        return {}
+    row = matched.iloc[0]
+    return {
+        "TrainType": row.get("TrainTypeSimple", ""),
+        "FromStation": row.get("FromStation", ""),
+        "ToStation": row.get("ToStation", ""),
+        "FirstDep": row.get("FirstDep", ""),
+        "LastArr": row.get("LastArr", ""),
+    }
+
+
+def _resolve_route_text(meta: dict, fallback_from: str = "", fallback_to: str = "") -> str:
+    from_station = str(meta.get("FromStation") or fallback_from or "").strip()
+    to_station = str(meta.get("ToStation") or fallback_to or "").strip()
+    if from_station and to_station:
+        return f"{from_station} → {to_station}"
+    if from_station:
+        return from_station
+    if to_station:
+        return to_station
+    return "-"
+
+
+def _build_stop_detail(sub: pd.DataFrame, processor, train_no: str) -> pd.DataFrame:
+    observed = sub.copy()
+    if observed.empty:
+        return observed
+
+    keep_cols = [c for c in ["StopSeq", "StationID", "StationName", "DelayTime", "IsDelayed", "PrevDelay"] if c in observed.columns]
+    observed = observed[keep_cols].drop_duplicates(subset=["StopSeq"], keep="last")
+
+    if processor is None or not hasattr(processor, "get_train_timetable"):
+        return observed.sort_values("StopSeq").reset_index(drop=True)
+
+    full_stops = processor.get_train_timetable(train_no)
+    if full_stops.empty:
+        return observed.sort_values("StopSeq").reset_index(drop=True)
+
+    base_cols = [c for c in ["StopSeq", "StationID", "StationName", "ScheduledArr", "ScheduledDep"] if c in full_stops.columns]
+    detail = full_stops[base_cols].drop_duplicates(subset=["StopSeq"], keep="last")
+    detail = detail.merge(
+        observed.drop(columns=["StationID", "StationName"], errors="ignore"),
+        on="StopSeq",
+        how="left",
+    )
+    if "StationName" in detail.columns:
+        detail["StationName"] = detail["StationName"].fillna(detail.get("StationID"))
+    return detail.sort_values("StopSeq").reset_index(drop=True)
+
+
 # ══ 即時 API 呼叫 ══════════════════════════════════════════════════════════════
 
 def _fetch_train_live(train_no: str) -> pd.DataFrame:
@@ -131,6 +186,8 @@ def _draw_delay_chart(sub: pd.DataFrame, title: str):
 
 def render(df: pd.DataFrame, **kwargs):
     page_header("◗", "車次追蹤", "指定日期 × 車次全程誤點分析")
+    schedule_df = kwargs.get("schedule_df")
+    processor = kwargs.get("processor")
 
     today_str = date.today().strftime("%Y-%m-%d")
 
@@ -181,14 +238,15 @@ def render(df: pd.DataFrame, **kwargs):
             return
 
         r = live_df.iloc[0]
-        direction_label = "順行（基隆→高雄）" if str(r.get("Direction")) == "0" else "逆行（高雄→基隆）"
         update_time = str(r.get("UpdateTime", ""))[:19].replace("T", " ")
+        meta = _lookup_schedule_meta(schedule_df, train_no)
+        route_text = _resolve_route_text(meta)
 
         cols = st.columns(4)
-        cols[0].metric("車種", r.get("TrainType", "-"))
+        cols[0].metric("車種", meta.get("TrainType") or r.get("TrainType", "-"))
         cols[1].metric("目前位置", r.get("StationName", r.get("StationID", "-")))
         cols[2].metric("即時誤點", f"{r.get('DelayTime', 0)} min")
-        cols[3].metric("行駛方向", direction_label)
+        cols[3].metric("行駛區間", route_text)
         st.caption(f"資料更新時間：{update_time}")
         st.info("💡 如需查看完整全程誤點折線，請選擇歷史日期（今天的資料會在明天可供查詢）。")
 
@@ -201,20 +259,23 @@ def render(df: pd.DataFrame, **kwargs):
             st.warning(f"查無 {sel_date} 日 {train_no} 次的資料，可能該日未行駛或爬蟲未覆蓋。")
             return
 
-        train_type    = sub["TrainType"].iloc[0] if "TrainType" in sub.columns else "-"
-        direction_val = sub["Direction"].iloc[0] if "Direction" in sub.columns else None
-        direction_label = (
-            "順行（基隆→高雄）" if str(direction_val) == "0" else
-            "逆行（高雄→基隆）" if str(direction_val) == "1" else "-"
-        )
-        first_arr = sub["FirstDep"].iloc[0]  if "FirstDep" in sub.columns else "-"
-        last_arr  = sub["LastArr"].iloc[0]   if "LastArr"  in sub.columns else "-"
+        meta = _lookup_schedule_meta(schedule_df, train_no)
+        fallback_from = sub["StationName"].iloc[0] if "StationName" in sub.columns and not sub.empty else ""
+        fallback_to = sub["StationName"].iloc[-1] if "StationName" in sub.columns and not sub.empty else ""
+        train_type = meta.get("TrainType") or (sub["TrainType"].iloc[0] if "TrainType" in sub.columns else "-")
+        first_arr = meta.get("FirstDep") or (sub["FirstDep"].iloc[0] if "FirstDep" in sub.columns else "-")
+        last_arr = meta.get("LastArr") or (sub["LastArr"].iloc[0] if "LastArr" in sub.columns else "-")
+        route_text = _resolve_route_text(meta, fallback_from, fallback_to)
+        from_station = meta.get("FromStation") or fallback_from or "-"
+        to_station = meta.get("ToStation") or fallback_to or "-"
 
-        meta_cols = st.columns(4)
+        meta_cols = st.columns(5)
         meta_cols[0].metric("車種", train_type)
-        meta_cols[1].metric("行駛方向", direction_label)
-        meta_cols[2].metric("首班始發", first_arr)
-        meta_cols[3].metric("末班抵達", last_arr)
+        meta_cols[1].metric("始發站", from_station)
+        meta_cols[2].metric("終點站", to_station)
+        meta_cols[3].metric("始發時間", first_arr)
+        meta_cols[4].metric("終到時間", last_arr)
+        st.caption(f"行駛區間：{route_text}")
 
         st.markdown("<div style='margin-top:12px'></div>", unsafe_allow_html=True)
         _draw_kpi_row(sub)
@@ -223,15 +284,17 @@ def render(df: pd.DataFrame, **kwargs):
         _draw_delay_chart(sub, f"{train_no} 次 {sel_date} 全程誤點（分鐘）")
 
         with st.expander("📋 完整停靠明細"):
+            detail_df = _build_stop_detail(sub, processor, train_no)
             show_cols = [c for c in [
-                "StopSeq", "StationID", "ScheduledArr",
+                "StopSeq", "StationName", "ScheduledArr", "ScheduledDep",
                 "DelayTime", "IsDelayed", "PrevDelay"
-            ] if c in sub.columns]
+            ] if c in detail_df.columns]
             st.dataframe(
-                sub[show_cols].rename(columns={
+                detail_df[show_cols].rename(columns={
                     "StopSeq": "停靠序",
-                    "StationID": "車站代碼",
+                    "StationName": "車站",
                     "ScheduledArr": "表定到站",
+                    "ScheduledDep": "表定開車",
                     "DelayTime": "誤點(分)",
                     "IsDelayed": "超標",
                     "PrevDelay": "前站誤點",

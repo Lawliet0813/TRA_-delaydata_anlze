@@ -7,9 +7,9 @@ from config import CLIENT_ID, CLIENT_SECRET, DATA_DIR
 from processor import DataProcessor, CLOUD_MODE
 
 if not CLOUD_MODE:
-    from crawlers.live_board import crawl_live_board
+    from crawlers.station_live import crawl_station_live
     from crawlers.alert import crawl_alerts
-    from crawlers.timetable import crawl_timetable
+    from crawlers.daily_timetable import crawl_daily_timetable
     from crawlers.station import crawl_stations
 
 from views.theme import CSS, TEXT_MUTED
@@ -43,7 +43,7 @@ processor = DataProcessor(DATA_DIR)
 
 @st.cache_data(ttl=180)
 def load_data():
-    df = processor.parse_live_board()
+    df = processor.parse_station_live()
     rd = processor.build_research_dataset()
     return df, rd
 
@@ -55,7 +55,7 @@ def load_train_schedule():
         from datetime import datetime as _dt
         _base = os.environ.get(
             "GITHUB_RAW_BASE",
-            "https://raw.githubusercontent.com/Lawliet0813/TRA_-delaydata_anlze/main/data/output",
+            "https://raw.githubusercontent.com/Lawliet0813/TRA_-delaydata_anlze/main/data",
         )
         url = f"{_base}/train_schedule.csv?v={int(_dt.now().timestamp())}"
         try:
@@ -117,7 +117,7 @@ with st.sidebar:
         )
         data_source = "GitHub Actions"
     else:
-        today_dir   = os.path.join(DATA_DIR, "live_board", today)
+        today_dir   = os.path.join(DATA_DIR, "station_live", today)
         files_today = (
             sorted(glob.glob(os.path.join(today_dir, "*.json")))
             if os.path.isdir(today_dir) else []
@@ -215,9 +215,9 @@ else:
 _crawl_kwargs: dict = {}
 if not CLOUD_MODE:
     _crawl_kwargs = dict(
-        crawl_live_board=crawl_live_board,
+        crawl_live_board=crawl_station_live,
         crawl_alerts=crawl_alerts,
-        crawl_timetable=crawl_timetable,
+        crawl_timetable=crawl_daily_timetable,
         crawl_stations=crawl_stations,
     )
 
@@ -236,7 +236,7 @@ elif page == "站點熱力圖":
         date_label=_date_label, processor=processor,
     )
 elif page == "車次追蹤":
-    page_train_tracker.render(df)
+    page_train_tracker.render(df, schedule_df=schedule_df, processor=processor)
 elif page == "OLS 迴歸":
     page_regression.render(
         df, filtered_research_df=filtered_research_df, date_label=_date_label,

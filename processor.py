@@ -23,6 +23,12 @@ GITHUB_RAW_BASE = os.environ.get(
 OFFICIAL_DELAY_THRESHOLD = 5   # 單位：分鐘
 RESEARCH_DELAY_THRESHOLD = 2   # 單位：分鐘
 
+def _normalize_station_id(value):
+    if pd.isna(value):
+        return np.nan
+    station_id = str(value).strip()
+    return station_id.zfill(4) if station_id else np.nan
+
 # 車種簡化對照：統一歸為五類
 def _simplify_type(type_name: str) -> str:
     if not type_name: return "其他"
@@ -121,9 +127,9 @@ def build_timetable_features(timetable_path: str) -> pd.DataFrame:
                 "TrainTypeSimple": type_simple,
                 "Direction": info.get("Direction", np.nan),
                 "TripLine": info.get("TripLine", np.nan),
-                "StartingStationID": info.get("StartingStationID", ""),
-                "EndingStationID": info.get("EndingStationID", ""),
-                "StationID": stop.get("StationID"),
+                "StartingStationID": _normalize_station_id(info.get("StartingStationID", "")),
+                "EndingStationID": _normalize_station_id(info.get("EndingStationID", "")),
+                "StationID": _normalize_station_id(stop.get("StationID")),
                 "StopSeq": stop.get("StopSequence", i + 1),
                 "ScheduledArr": arr_str,
                 "ScheduledDep": dep_str,
@@ -155,6 +161,7 @@ def build_timetable_features(timetable_path: str) -> pd.DataFrame:
 class DataProcessor:
     def __init__(self, data_dir):
         self.data_dir = data_dir
+        self._raw_cache = {}        # 原始 JSON 解析快取
         self._timetable_df = None    # 時刻表快取
         self._mix_df = None          # 混合度快取
         self._stations_df = None     # 站點快取
@@ -221,6 +228,7 @@ class DataProcessor:
                 url = f"{GITHUB_RAW_BASE}/stations_coords.csv?v={cache_busting}"
                 df = pd.read_csv(url, dtype={"StationID": str})
                 if not df.empty and "Lat" in df.columns:
+                    df["StationID"] = df["StationID"].apply(_normalize_station_id)
                     self._stations_df = df[["StationID", "StationName", "Lat", "Lon"]]
                     return self._stations_df
             except Exception:
@@ -231,9 +239,12 @@ class DataProcessor:
                     data = json.loads(resp.read().decode())
                 records = [{"StationID": s.get("StationID"),
                             "StationName": s.get("StationName", {}).get("Zh_tw"),
+                            "StationClass": s.get("StationClass"),
                             "Lat": s.get("StationPosition", {}).get("PositionLat"),
                             "Lon": s.get("StationPosition", {}).get("PositionLon")}
                            for s in data.get("Stations", [])]
+                for row in records:
+                    row["StationID"] = _normalize_station_id(row["StationID"])
                 self._stations_df = pd.DataFrame(records)
                 return self._stations_df
             except Exception:
@@ -248,9 +259,12 @@ class DataProcessor:
             data = json.load(f)
         records = [{"StationID": s.get("StationID"),
                     "StationName": s.get("StationName", {}).get("Zh_tw"),
+                    "StationClass": s.get("StationClass"),
                     "Lat": s.get("StationPosition", {}).get("PositionLat"),
                     "Lon": s.get("StationPosition", {}).get("PositionLon")}
                    for s in data.get("Stations", [])]
+        for row in records:
+            row["StationID"] = _normalize_station_id(row["StationID"])
         self._stations_df = pd.DataFrame(records)
         return self._stations_df
 
@@ -259,6 +273,22 @@ class DataProcessor:
         if tt.empty: return {}
         terminals = tt[tt["IsTerminal"] == 1][["TrainNo", "StationID"]]
         return dict(zip(terminals["TrainNo"], terminals["StationID"]))
+
+    def get_train_timetable(self, train_no) -> pd.DataFrame:
+        tt, _ = self._load_timetable()
+        if tt.empty:
+            return pd.DataFrame()
+        sub = tt[tt["TrainNo"].astype(str) == str(train_no)].copy()
+        if sub.empty:
+            return sub
+        stations = self._load_stations()
+        if not stations.empty and "StationName" in stations.columns:
+            sub = sub.merge(
+                stations[["StationID", "StationName"]].drop_duplicates(subset=["StationID"]),
+                on="StationID",
+                how="left",
+            )
+        return sub.sort_values("StopSeq").reset_index(drop=True)
 
     def get_stations_data(self):
         return self._load_stations()
@@ -381,6 +411,10 @@ class DataProcessor:
         """
         pattern = os.path.join(self.data_dir, data_subdir,
                                date_str if date_str else "*", "*.json")
+        cache_key = (data_subdir, root_key, date_str or "__all__")
+        cached = self._raw_cache.get(cache_key)
+        if cached is not None:
+            return cached.copy()
         files = glob.glob(pattern)
         if not files:
             return pd.DataFrame()
@@ -408,12 +442,12 @@ class DataProcessor:
                         "TaiwanDate": taiwan_date,
                         "CrawlTime": crawl_time,
                         "TrainNo": r.get("TrainNo"),
-                        "StationID": r.get("StationID"),
+                        "StationID": _normalize_station_id(r.get("StationID")),
                         "StationName": r.get("StationName", {}).get("Zh_tw"),
                         "TrainTypeRaw": r.get("TrainTypeName", {}).get("Zh_tw", ""),
                         "Direction": r.get("Direction", np.nan),
                         "TripLine": r.get("TripLine", np.nan),
-                        "EndingStationID": r.get("EndingStationID", ""),
+                        "EndingStationID": _normalize_station_id(r.get("EndingStationID", "")),
                         "ScheduleArrivalTime": arr_hhmm,
                         "ScheduleDepartureTime": dep_hhmm,
                         "RunningStatus": r.get("RunningStatus", 0),
@@ -430,6 +464,7 @@ class DataProcessor:
         # 去重複：同日同車次同車站只保留最後一筆
         df = df.sort_values("CrawlTime").drop_duplicates(
             subset=["Date", "TrainNo", "StationID"], keep="last")
+        self._raw_cache[cache_key] = df.copy()
         return df
 
 
