@@ -47,6 +47,42 @@ def _resolve_route_text(meta: dict, fallback_from: str = "", fallback_to: str = 
     return "-"
 
 
+def _build_station_name_map(processor) -> dict:
+    if processor is None or not hasattr(processor, "get_stations_data"):
+        return {}
+    stations = processor.get_stations_data()
+    if stations is None or stations.empty or "StationID" not in stations.columns or "StationName" not in stations.columns:
+        return {}
+    station_df = stations[["StationID", "StationName"]].dropna(subset=["StationID"]).copy()
+    station_df["StationID"] = station_df["StationID"].astype(str).str.strip().str.zfill(4)
+    station_df["StationName"] = station_df["StationName"].astype(str).str.strip()
+    station_df = station_df[station_df["StationName"] != ""]
+    return dict(zip(station_df["StationID"], station_df["StationName"]))
+
+
+def _enrich_station_names(sub: pd.DataFrame, processor=None) -> pd.DataFrame:
+    if sub.empty:
+        return sub
+    enriched = sub.copy()
+    if "StationID" not in enriched.columns:
+        return enriched
+    enriched["StationID"] = enriched["StationID"].astype(str).str.strip().str.zfill(4)
+    if "StationName" not in enriched.columns:
+        enriched["StationName"] = pd.NA
+    station_map = _build_station_name_map(processor)
+    cleaned_name = enriched["StationName"].astype("string").str.strip()
+    invalid_name = cleaned_name.isna() | (cleaned_name == "") | (cleaned_name == enriched["StationID"])
+    if station_map:
+        enriched.loc[invalid_name, "StationName"] = enriched.loc[invalid_name, "StationID"].map(station_map)
+    enriched["StationName"] = (
+        enriched["StationName"]
+        .astype("string")
+        .str.strip()
+        .fillna(enriched["StationID"])
+    )
+    return enriched
+
+
 def _build_stop_detail(sub: pd.DataFrame, processor, train_no: str) -> pd.DataFrame:
     observed = sub.copy()
     if observed.empty:
@@ -294,6 +330,7 @@ def render(df: pd.DataFrame, **kwargs):
         if sub.empty:
             st.warning(f"查無 {sel_date} 日 {train_no} 次的資料，可能該日未行駛或爬蟲未覆蓋。")
             return
+        sub = _enrich_station_names(sub, processor)
 
         meta = _lookup_schedule_meta(schedule_df, train_no)
         fallback_from = sub["StationName"].iloc[0] if "StationName" in sub.columns and not sub.empty else ""
