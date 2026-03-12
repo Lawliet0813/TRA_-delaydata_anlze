@@ -1,35 +1,35 @@
 """
 Design System — TRA Delay Research Dashboard
-=============================================
-鐵道藍 × 深空 × Glassmorphism · Premium Research Dashboard
+============================================
+Rail Operations Board · Research-first visual language
 """
 
 # ── Color Palette ──────────────────────────────────────────────
-BG_PRIMARY    = "#0a0e14"       # 主背景（深空黑）
-BG_SECONDARY  = "#111820"       # 卡片 / sidebar
-BG_TERTIARY   = "#1a2332"       # hover / elevated
-BORDER        = "rgba(255,255,255,0.06)"
-BORDER_HOVER  = "rgba(59,130,246,0.4)"
+BG_PRIMARY    = "#07111a"
+BG_SECONDARY  = "#0c1722"
+BG_TERTIARY   = "#142231"
+BORDER        = "rgba(173, 194, 214, 0.12)"
+BORDER_HOVER  = "rgba(75,163,255,0.42)"
 
-BLUE          = "#3b82f6"       # 鐵道藍（主色）
-BLUE_GLOW     = "rgba(59,130,246,0.25)"
-GREEN         = "#10b981"       # 安全綠
-YELLOW        = "#f59e0b"       # 信號黃
-RED           = "#ef4444"       # 警示紅
-PURPLE        = "#a78bfa"       # 紫
-CYAN          = "#22d3ee"       # 青
+BLUE          = "#4ba3ff"
+BLUE_GLOW     = "rgba(75,163,255,0.22)"
+GREEN         = "#35c48b"
+YELLOW        = "#f1b84b"
+RED           = "#f26b5e"
+PURPLE        = "#8ca8ff"
+CYAN          = "#3cc9d6"
 
-TEXT_PRIMARY   = "#f0f6fc"      # 主文字
-TEXT_SECONDARY = "#7d8590"      # 副文字
-TEXT_MUTED     = "#484f58"      # 低調文字
+TEXT_PRIMARY   = "#eef5fb"
+TEXT_SECONDARY = "#9eb0c4"
+TEXT_MUTED     = "#5d7187"
 
 COLORS = [BLUE, GREEN, YELLOW, RED, PURPLE, CYAN]
 
 # ── Plotly Theme ───────────────────────────────────────────────
 PLOTLY_THEME = dict(
     paper_bgcolor="rgba(0,0,0,0)",
-    plot_bgcolor="rgba(17,24,32,0.6)",
-    font=dict(color=TEXT_SECONDARY, family="Inter, Noto Sans TC, sans-serif", size=12),
+    plot_bgcolor="rgba(12,23,34,0.72)",
+    font=dict(color=TEXT_SECONDARY, family="IBM Plex Sans TC, Noto Sans TC, sans-serif", size=12),
     margin=dict(l=16, r=16, t=40, b=16),
 )
 
@@ -43,19 +43,25 @@ AXIS_STYLE = dict(
 # ── CSS Stylesheet ─────────────────────────────────────────────
 CSS = f"""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Noto+Sans+TC:wght@300;400;500;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+TC:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
 
 /* ===== Global ===== */
 .stApp {{
     background: {BG_PRIMARY};
     background-image:
-        radial-gradient(ellipse 80% 60% at 50% -20%, rgba(59,130,246,0.08) 0%, transparent 70%),
-        radial-gradient(ellipse 60% 40% at 80% 100%, rgba(16,185,129,0.05) 0%, transparent 60%);
+        radial-gradient(circle at top left, rgba(75,163,255,0.14), transparent 32%),
+        radial-gradient(circle at bottom right, rgba(53,196,139,0.09), transparent 28%),
+        linear-gradient(180deg, #07111a 0%, #091521 36%, #07111a 100%);
     color: {TEXT_PRIMARY};
 }}
 
 html, body, .stApp, .stMarkdown, p {{
-    font-family: 'Inter', 'Noto Sans TC', sans-serif !important;
+    font-family: 'IBM Plex Sans TC', 'Noto Sans TC', sans-serif !important;
+}}
+
+.block-container {{
+    padding-top: 1.3rem !important;
+    padding-bottom: 2rem !important;
 }}
 
 /* Preserve Streamlit/Material icon glyphs; broad span/div font overrides break them. */
@@ -68,14 +74,14 @@ html, body, .stApp, .stMarkdown, p {{
 }}
 
 h1, h2, h3, h4 {{
-    font-family: 'Inter', 'Noto Sans TC', sans-serif !important;
+    font-family: 'IBM Plex Sans TC', 'Noto Sans TC', sans-serif !important;
     font-weight: 700 !important;
     color: {TEXT_PRIMARY} !important;
-    letter-spacing: -0.02em;
+    letter-spacing: -0.03em;
 }}
 
-h1 {{ font-size: 1.75rem !important; }}
-h2 {{ font-size: 1.15rem !important; color: {TEXT_SECONDARY} !important; }}
+h1 {{ font-size: 1.9rem !important; }}
+h2 {{ font-size: 1.12rem !important; color: {TEXT_SECONDARY} !important; }}
 
 code {{
     font-family: 'JetBrains Mono', monospace !important;
@@ -111,27 +117,25 @@ section[data-testid="stSidebar"] .stButton > button:hover {{
 }}
 
 section[data-testid="stSidebar"] .stButton > button[kind="primary"] {{
-    background: rgba(59,130,246,0.12) !important;
-    border-color: rgba(59,130,246,0.25) !important;
+    background: rgba(75,163,255,0.12) !important;
+    border-color: rgba(75,163,255,0.25) !important;
     color: {BLUE} !important;
     font-weight: 600 !important;
-    box-shadow: 0 0 20px rgba(59,130,246,0.1) !important;
+    box-shadow: 0 0 20px rgba(75,163,255,0.1) !important;
 }}
 
 /* ===== Metric Cards ===== */
 [data-testid="metric-container"] {{
-    background: rgba(255,255,255,0.03);
-    backdrop-filter: blur(16px);
-    -webkit-backdrop-filter: blur(16px);
+    background: linear-gradient(180deg, rgba(255,255,255,0.035), rgba(255,255,255,0.02));
     border: 1px solid {BORDER};
-    border-radius: 12px;
-    padding: 20px 24px !important;
+    border-radius: 16px;
+    padding: 18px 22px !important;
     transition: all 0.3s ease;
 }}
 
 [data-testid="metric-container"]:hover {{
     border-color: {BORDER_HOVER};
-    box-shadow: 0 0 30px rgba(59,130,246,0.08);
+    box-shadow: 0 14px 34px rgba(0,0,0,0.18);
     transform: translateY(-1px);
 }}
 
@@ -173,11 +177,11 @@ section[data-testid="stSidebar"] .stButton > button[kind="primary"] {{
 }}
 
 .stButton > button[kind="primary"] {{
-    background: linear-gradient(135deg, {BLUE}, #2563eb) !important;
+    background: linear-gradient(135deg, {BLUE}, #3577ff) !important;
     border-color: transparent !important;
-    color: white !important;
+    color: #03101a !important;
     font-weight: 600 !important;
-    box-shadow: 0 4px 14px rgba(59,130,246,0.3) !important;
+    box-shadow: 0 6px 18px rgba(75,163,255,0.28) !important;
 }}
 
 .stButton > button[kind="primary"]:hover {{
@@ -244,7 +248,7 @@ div[data-testid="stAlert"] {{
 }}
 
 .stTabs [aria-selected="true"] {{
-    background: rgba(59,130,246,0.12) !important;
+    background: rgba(75,163,255,0.12) !important;
     color: {BLUE} !important;
 }}
 
@@ -252,11 +256,9 @@ div[data-testid="stAlert"] {{
 
 /* Glass Card */
 .glass-card {{
-    background: rgba(255,255,255,0.03);
-    backdrop-filter: blur(16px);
-    -webkit-backdrop-filter: blur(16px);
+    background: linear-gradient(180deg, rgba(255,255,255,0.035), rgba(255,255,255,0.018));
     border: 1px solid {BORDER};
-    border-radius: 14px;
+    border-radius: 18px;
     padding: 24px;
     transition: all 0.3s ease;
 }}
@@ -285,8 +287,8 @@ div[data-testid="stAlert"] {{
 
 /* Page Header */
 .page-header {{
-    padding: 8px 0 20px 0;
-    margin-bottom: 28px;
+    padding: 8px 0 18px 0;
+    margin-bottom: 24px;
     border-bottom: 1px solid {BORDER};
 }}
 .page-header h1 {{
@@ -305,11 +307,10 @@ div[data-testid="stAlert"] {{
 
 /* KPI Card (enhanced) */
 .kpi-card {{
-    background: rgba(255,255,255,0.03);
-    backdrop-filter: blur(16px);
+    background: linear-gradient(180deg, rgba(255,255,255,0.035), rgba(255,255,255,0.02));
     border: 1px solid {BORDER};
-    border-radius: 14px;
-    padding: 20px 24px;
+    border-radius: 18px;
+    padding: 18px 20px;
     transition: all 0.3s ease;
     position: relative;
     overflow: hidden;
@@ -327,7 +328,7 @@ div[data-testid="stAlert"] {{
 
 .kpi-card:hover {{
     border-color: rgba(59,130,246,0.2);
-    box-shadow: 0 8px 32px rgba(0,0,0,0.15);
+    box-shadow: 0 14px 34px rgba(0,0,0,0.18);
     transform: translateY(-2px);
 }}
 
@@ -363,15 +364,14 @@ div[data-testid="stAlert"] {{
 
 /* Hero */
 .hero {{
-    text-align: center;
-    padding: 48px 0 32px 0;
+    padding: 24px 0 22px 0;
     position: relative;
 }}
 
 .hero h1 {{
-    font-size: 2.2rem !important;
+    font-size: 2.35rem !important;
     font-weight: 700 !important;
-    background: linear-gradient(135deg, {TEXT_PRIMARY} 30%, {BLUE} 100%) !important;
+    background: linear-gradient(135deg, {TEXT_PRIMARY} 10%, {BLUE} 75%, #8fd0ff 100%) !important;
     -webkit-background-clip: text !important;
     -webkit-text-fill-color: transparent !important;
     margin-bottom: 8px !important;
@@ -395,6 +395,15 @@ div[data-testid="stAlert"] {{
     color: {BLUE};
     font-size: 0.78rem;
     font-weight: 500;
+}}
+
+.hero .kicker {{
+    font-family: 'JetBrains Mono', monospace;
+    color: {YELLOW};
+    font-size: 0.72rem;
+    letter-spacing: 1.6px;
+    text-transform: uppercase;
+    margin-bottom: 12px;
 }}
 
 /* Live Pulse */
@@ -501,6 +510,152 @@ div[data-testid="stAlert"] {{
     color: {TEXT_PRIMARY};
     font-family: 'JetBrains Mono', monospace;
     font-weight: 500;
+}}
+
+.toolbar-shell {{
+    background: linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.018));
+    border: 1px solid {BORDER};
+    border-radius: 18px;
+    padding: 18px 22px 12px 22px;
+    margin-bottom: 24px;
+}}
+
+.toolbar-title {{
+    font-family: 'JetBrains Mono', monospace;
+    color: {TEXT_MUTED};
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 1.4px;
+    margin-bottom: 6px;
+}}
+
+.toolbar-heading {{
+    color: {TEXT_PRIMARY};
+    font-size: 1.18rem;
+    font-weight: 600;
+    margin-bottom: 4px;
+}}
+
+.toolbar-copy {{
+    color: {TEXT_SECONDARY};
+    font-size: 0.82rem;
+    line-height: 1.7;
+}}
+
+.toolbar-stat {{
+    background: rgba(255,255,255,0.03);
+    border: 1px solid {BORDER};
+    border-radius: 14px;
+    padding: 14px 16px;
+    min-height: 94px;
+}}
+
+.toolbar-stat .label {{
+    font-family: 'JetBrains Mono', monospace;
+    color: {TEXT_MUTED};
+    font-size: 0.68rem;
+    text-transform: uppercase;
+    letter-spacing: 1.2px;
+    margin-bottom: 8px;
+}}
+
+.toolbar-stat .value {{
+    color: {TEXT_PRIMARY};
+    font-size: 1.05rem;
+    font-weight: 600;
+}}
+
+.toolbar-stat .meta {{
+    color: {TEXT_SECONDARY};
+    font-size: 0.76rem;
+    margin-top: 6px;
+    line-height: 1.5;
+}}
+
+.story-card {{
+    background: linear-gradient(180deg, rgba(255,255,255,0.035), rgba(255,255,255,0.02));
+    border: 1px solid {BORDER};
+    border-radius: 18px;
+    padding: 18px 20px;
+    min-height: 132px;
+}}
+
+.story-card + .story-card {{
+    margin-top: 12px;
+}}
+
+.story-card .eyebrow {{
+    font-family: 'JetBrains Mono', monospace;
+    color: {TEXT_MUTED};
+    font-size: 0.68rem;
+    text-transform: uppercase;
+    letter-spacing: 1.2px;
+    margin-bottom: 10px;
+}}
+
+.story-card .value {{
+    color: {TEXT_PRIMARY};
+    font-size: 1.42rem;
+    font-weight: 700;
+    line-height: 1.25;
+}}
+
+.story-card .body {{
+    color: {TEXT_SECONDARY};
+    font-size: 0.8rem;
+    line-height: 1.7;
+    margin-top: 8px;
+}}
+
+.story-card.blue .value {{ color: {BLUE}; }}
+.story-card.green .value {{ color: {GREEN}; }}
+.story-card.yellow .value {{ color: {YELLOW}; }}
+.story-card.red .value {{ color: {RED}; }}
+
+.note-card {{
+    background: rgba(75,163,255,0.08);
+    border: 1px solid rgba(75,163,255,0.18);
+    border-radius: 16px;
+    padding: 16px 18px;
+}}
+
+.note-card .title {{
+    color: {TEXT_PRIMARY};
+    font-size: 0.9rem;
+    font-weight: 600;
+    margin-bottom: 6px;
+}}
+
+.note-card .body {{
+    color: {TEXT_SECONDARY};
+    font-size: 0.8rem;
+    line-height: 1.75;
+}}
+
+.compact-list {{
+    display: grid;
+    gap: 10px;
+}}
+
+.compact-item {{
+    display: grid;
+    grid-template-columns: 84px 1fr;
+    gap: 10px;
+    align-items: start;
+    padding: 10px 0;
+    border-bottom: 1px solid rgba(255,255,255,0.04);
+}}
+
+.compact-item .term {{
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.72rem;
+    color: {BLUE};
+}}
+
+.compact-item .desc {{
+    font-size: 0.8rem;
+    color: {TEXT_SECONDARY};
+    line-height: 1.65;
 }}
 
 /* Table Styles */

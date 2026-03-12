@@ -1,22 +1,24 @@
 """
-車次追蹤頁面 — 指定日期 × 車次，查看全程誤點折線圖。
+車次追蹤頁面 — 指定日期 × 車次，查看單班次旅程中的延誤累積。
 
 資料來源：
-- 歷史日期 → data/output/processed_data.csv
+- 歷史日期 → StationLiveBoard 匯整後資料
 - 當天     → TDX TrainLiveBoard API（即時呼叫）
 """
 
-import streamlit as st
+from datetime import date
+
 import pandas as pd
 import plotly.graph_objects as go
 import requests
-from datetime import date
+import streamlit as st
 
-from views.theme import PLOTLY_THEME, AXIS_STYLE, BLUE, GREEN, TEXT_SECONDARY
-from views.components import page_header, section_title
+from views.components import kpi_card, note_card, page_header, section_title, story_card
+from views.theme import AXIS_STYLE, BLUE, GREEN, PLOTLY_THEME, TEXT_SECONDARY, YELLOW
 
-RED   = "#f85149"
+RED = "#f85149"
 AMBER = "#f59e0b"
+BG_COLOR = "#07111a"
 
 
 def _lookup_schedule_meta(schedule_df: pd.DataFrame, train_no: str) -> dict:
@@ -87,207 +89,455 @@ def _build_stop_detail(sub: pd.DataFrame, processor, train_no: str) -> pd.DataFr
     observed = sub.copy()
     if observed.empty:
         return observed
+    observed["_obs_order"] = range(1, len(observed) + 1)
 
-    keep_cols = [c for c in ["StopSeq", "StationID", "StationName", "DelayTime", "IsDelayed", "PrevDelay"] if c in observed.columns]
-    observed = observed[keep_cols].drop_duplicates(subset=["StopSeq"], keep="last")
+    keep_cols = [
+        c for c in [
+            "StopSeq",
+            "StationID",
+            "StationName",
+            "DelayTime",
+            "ActualDep",
+            "IsDelayed",
+            "PrevDelay",
+            "ScheduledArr",
+            "ScheduledDep",
+            "Direction",
+            "_obs_order",
+        ]
+        if c in observed.columns
+    ]
+    observed = observed[keep_cols].copy()
+
+    if "StopSeq" in observed.columns:
+        observed = observed.drop_duplicates(subset=["StopSeq"], keep="last")
+    elif "StationID" in observed.columns:
+        observed = observed.drop_duplicates(subset=["StationID"], keep="last")
 
     if processor is None or not hasattr(processor, "get_train_timetable"):
-        return observed.sort_values("StopSeq").reset_index(drop=True)
+        return observed.sort_values("_obs_order").reset_index(drop=True)
 
     full_stops = processor.get_train_timetable(train_no)
     if full_stops.empty:
-        return observed.sort_values("StopSeq").reset_index(drop=True)
+        return observed.sort_values("_obs_order").reset_index(drop=True)
 
     base_cols = [c for c in ["StopSeq", "StationID", "StationName", "ScheduledArr", "ScheduledDep"] if c in full_stops.columns]
     detail = full_stops[base_cols].drop_duplicates(subset=["StopSeq"], keep="last")
-    detail = detail.merge(
-        observed.drop(columns=["StationID", "StationName"], errors="ignore"),
-        on="StopSeq",
-        how="left",
-    )
+    if "StopSeq" in observed.columns:
+        detail = detail.merge(
+            observed.drop(columns=["StationID", "StationName", "ScheduledArr", "ScheduledDep"], errors="ignore"),
+            on="StopSeq",
+            how="left",
+        )
+    else:
+        detail = detail.merge(
+            observed.drop(columns=["StationName", "ScheduledArr", "ScheduledDep"], errors="ignore"),
+            on="StationID",
+            how="left",
+        )
     if "StationName" in detail.columns:
         detail["StationName"] = detail["StationName"].fillna(detail.get("StationID"))
     return detail.sort_values("StopSeq").reset_index(drop=True)
 
 
-def _format_delay_station_tags(sub: pd.DataFrame) -> list[str]:
-    if sub.empty or "DelayTime" not in sub.columns:
-        return []
-    delay_df = sub[sub["DelayTime"].fillna(0) >= 1].copy()
-    if delay_df.empty:
-        return []
-    name_col = "StationName" if "StationName" in delay_df.columns else "StationID"
-    return [
-        f"{row[name_col]} ({int(row['DelayTime'])} 分)"
-        for _, row in delay_df.iterrows()
-        if pd.notna(row.get(name_col))
-    ]
-
-
-# ══ 即時 API 呼叫 ══════════════════════════════════════════════════════════════
-
 def _fetch_train_live(train_no: str) -> pd.DataFrame:
-    """
-    呼叫 TDX TrainLiveBoard/{TrainNo}，回傳該車次目前位置。
-    注意：此 API 只回傳「列車目前所在車站」單一筆，非全程。
-    """
     try:
-        from config import BASE_URL
         from auth import auth_header
+        from config import BASE_URL
+
         url = f"{BASE_URL}/TrainLiveBoard/TrainNo/{train_no}"
-        resp = requests.get(url, headers=auth_header(),
-                            params={"$format": "JSON"}, timeout=8)
+        resp = requests.get(url, headers=auth_header(), params={"$format": "JSON"}, timeout=8)
         resp.raise_for_status()
         boards = resp.json().get("TrainLiveBoards", [])
         if not boards:
             return pd.DataFrame()
         records = []
-        for r in boards:
-            records.append({
-                "StationID":       r.get("StationID", ""),
-                "StationName":     r.get("StationName", {}).get("Zh_tw", ""),
-                "DelayTime":       r.get("DelayTime", 0),
-                "TrainType":       r.get("TrainTypeName", {}).get("Zh_tw", ""),
-                "Direction":       r.get("Direction", ""),
-                "EndingStationID": r.get("EndingStationID", ""),
-                "UpdateTime":      r.get("UpdateTime", ""),
-            })
+        for item in boards:
+            records.append(
+                {
+                    "StationID": item.get("StationID", ""),
+                    "StationName": item.get("StationName", {}).get("Zh_tw", ""),
+                    "DelayTime": item.get("DelayTime", 0),
+                    "TrainType": item.get("TrainTypeName", {}).get("Zh_tw", ""),
+                    "Direction": item.get("Direction", ""),
+                    "EndingStationID": item.get("EndingStationID", ""),
+                    "UpdateTime": item.get("UpdateTime", ""),
+                }
+            )
         return pd.DataFrame(records)
-    except Exception as e:
-        st.error(f"API 呼叫失敗：{e}")
+    except Exception as exc:
+        st.error(f"API 呼叫失敗：{exc}")
         return pd.DataFrame()
 
 
-# ══ 歷史資料查詢 ══════════════════════════════════════════════════════════════
-
 def _get_history(df: pd.DataFrame, train_no: str, sel_date: str) -> pd.DataFrame:
     sub = df[
-        (df["TrainNo"].astype(str) == str(train_no)) &
-        (df["Date"].astype(str) == sel_date)
+        (df["TrainNo"].astype(str) == str(train_no))
+        & (df["Date"].astype(str) == sel_date)
     ].copy()
     if sub.empty:
         return sub
-    return sub.sort_values("StopSeq").reset_index(drop=True)
+    if "StopSeq" in sub.columns:
+        return sub.sort_values("StopSeq").reset_index(drop=True)
+    if "ScheduledArr" in sub.columns:
+        return sub.sort_values("ScheduledArr").reset_index(drop=True)
+    return sub.reset_index(drop=True)
 
 
-# ══ KPI 列 ════════════════════════════════════════════════════════════════════
-def _draw_kpi_row(sub: pd.DataFrame):
-    total   = len(sub)
-    max_d   = int(sub["DelayTime"].max())
-    avg_d   = round(sub["DelayTime"].mean(), 1)
-    over5   = int((sub["DelayTime"] >= 5).sum())
-    on_time = total - int((sub["DelayTime"] >= 1).sum())
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("最大誤點", f"{max_d} min")
-    c2.metric("平均誤點", f"{avg_d} min")
-    c3.metric("超標站數（≥5min）", f"{over5} 站")
-    c4.metric("準點站數（0min）", f"{on_time} 站")
+def _delay_status(delay_value: float | int | None) -> str:
+    if pd.isna(delay_value):
+        return "無資料"
+    if delay_value >= 5:
+        return "官方誤點"
+    if delay_value >= 2:
+        return "研究誤點"
+    if delay_value >= 1:
+        return "輕微延誤"
+    return "準點"
 
 
-# ══ 折線圖 ════════════════════════════════════════════════════════════════
-def _draw_delay_chart(sub: pd.DataFrame, title: str):
-    name_col = "StationName" if ("StationName" in sub.columns and sub["StationName"].notna().any()) else "StationID"
-    sub = sub.copy()
-    sub["x_label"] = sub.apply(
-        lambda r: f"{int(r['StopSeq'])}｜{r[name_col]}"
-        if pd.notna(r.get("StopSeq")) else str(r[name_col]),
-        axis=1
+def _delay_color(delay_value: float | int | None) -> str:
+    if pd.isna(delay_value):
+        return TEXT_SECONDARY
+    if delay_value >= 5:
+        return RED
+    if delay_value >= 2:
+        return YELLOW
+    if delay_value >= 1:
+        return AMBER
+    return GREEN
+
+
+def _journey_summary(detail_df: pd.DataFrame) -> dict:
+    valid_delay = detail_df["DelayTime"].fillna(0)
+    delayed_research = int((valid_delay >= 2).sum())
+    delayed_official = int((valid_delay >= 5).sum())
+    first_delay_station = "—"
+    delayed_rows = detail_df[valid_delay >= 2]
+    if not delayed_rows.empty:
+        first_delay_station = str(delayed_rows.iloc[0].get("StationName") or delayed_rows.iloc[0].get("StationID") or "—")
+    peak_row = detail_df.loc[valid_delay.idxmax()] if not detail_df.empty else None
+    peak_station = "—"
+    peak_delay = 0.0
+    if peak_row is not None:
+        peak_station = str(peak_row.get("StationName") or peak_row.get("StationID") or "—")
+        peak_delay = float(peak_row.get("DelayTime") or 0)
+    end_delay = float(valid_delay.iloc[-1]) if not detail_df.empty else 0.0
+    return {
+        "stop_count": int(len(detail_df)),
+        "avg_delay": round(float(valid_delay.mean()), 2),
+        "max_delay": round(float(valid_delay.max()), 1),
+        "research_delay_count": delayed_research,
+        "official_delay_count": delayed_official,
+        "first_delay_station": first_delay_station,
+        "peak_station": peak_station,
+        "peak_delay": peak_delay,
+        "end_delay": end_delay,
+    }
+
+
+def _build_delay_profile_chart(detail_df: pd.DataFrame, title: str) -> go.Figure:
+    chart_df = detail_df.copy()
+    if "StopSeq" not in chart_df.columns:
+        chart_df["StopSeq"] = range(1, len(chart_df) + 1)
+    chart_df["StopSeq"] = pd.to_numeric(chart_df["StopSeq"], errors="coerce")
+    chart_df = chart_df.dropna(subset=["StopSeq"])
+    chart_df["DelayTime"] = pd.to_numeric(chart_df["DelayTime"], errors="coerce").fillna(0)
+    chart_df["StationLabel"] = chart_df.apply(
+        lambda r: f"{int(r['StopSeq'])}｜{r['StationName']}"
+        if pd.notna(r.get("StationName")) else f"{int(r['StopSeq'])}",
+        axis=1,
     )
-    colors = sub["DelayTime"].apply(
-        lambda d: RED if d >= 5 else (AMBER if d >= 1 else GREEN)
-    )
+
     fig = go.Figure()
-    # 塡充背景
-    fig.add_trace(go.Scatter(
-        x=sub["x_label"], y=sub["DelayTime"],
-        mode="lines", line=dict(color=BLUE, width=0),
-        fill="tozeroy", fillcolor="rgba(59,130,246,0.07)",
-        showlegend=False, hoverinfo="skip",
-    ))
-    # 主線 + 點
-    fig.add_trace(go.Scatter(
-        x=sub["x_label"], y=sub["DelayTime"],
-        mode="lines+markers", name="誤點分鐘",
-        line=dict(color=BLUE, width=2),
-        marker=dict(size=9, color=colors, line=dict(width=1.5, color="#0d1117")),
-        hovertemplate="<b>%{x}</b><br>誤點：%{y} 分鐘<extra></extra>",
-    ))
-    delayed = sub[sub["DelayTime"].fillna(0) >= 1].copy()
-    if not delayed.empty:
-        delayed["delay_label"] = delayed.apply(
-            lambda r: f"{r[name_col]} +{int(r['DelayTime'])}",
-            axis=1,
-        )
-        fig.add_trace(go.Scatter(
-            x=delayed["x_label"],
-            y=delayed["DelayTime"],
-            mode="markers+text",
-            text=delayed["delay_label"],
-            textposition="top center",
-            textfont=dict(size=10, color="#e6edf3"),
+    fig.add_hrect(y0=0, y1=2, fillcolor="rgba(53,196,139,0.06)", line_width=0)
+    fig.add_hrect(y0=2, y1=5, fillcolor="rgba(241,184,75,0.08)", line_width=0)
+    fig.add_hrect(y0=5, y1=max(chart_df["DelayTime"].max() + 1, 6), fillcolor="rgba(242,107,94,0.08)", line_width=0)
+    fig.add_trace(
+        go.Scatter(
+            x=chart_df["StopSeq"],
+            y=chart_df["DelayTime"],
+            mode="lines+markers",
+            line=dict(color=BLUE, width=2.5),
             marker=dict(
-                size=13,
-                color=delayed["DelayTime"].apply(lambda d: RED if d >= 5 else AMBER),
-                symbol="diamond",
-                line=dict(width=1.5, color="#0d1117"),
+                size=10,
+                color=chart_df["DelayTime"].apply(_delay_color),
+                line=dict(width=1.6, color=BG_COLOR),
             ),
-            hovertemplate="<b>%{x}</b><br>誤點站：%{text}<extra></extra>",
+            customdata=chart_df[["StationLabel", "DelayTime"]].values,
+            hovertemplate="<b>%{customdata[0]}</b><br>延誤 %{customdata[1]} 分<extra></extra>",
             showlegend=False,
-        ))
-    # 5 分鐘基準線
-    fig.add_hline(
-        y=5, line_dash="dot", line_color=RED,
-        annotation_text="官方誤點門檻（5 min）",
-        annotation_font_color=RED,
-        annotation_position="top right",
+        )
+    )
+    fig.add_hline(y=2, line_dash="dot", line_color=YELLOW, annotation_text="研究門檻 2 分", annotation_position="top left")
+    fig.add_hline(y=5, line_dash="dot", line_color=RED, annotation_text="官方門檻 5 分", annotation_position="top right")
+    fig.update_layout(
+        **{**PLOTLY_THEME, "margin": dict(l=16, r=16, t=42, b=16)},
+        title=dict(text=title, font=dict(size=14, color="#e6edf3")),
+        height=360,
+    )
+    fig.update_xaxes(
+        **AXIS_STYLE,
+        title="停靠序",
+        tickmode="array",
+        tickvals=chart_df["StopSeq"],
+        ticktext=chart_df["StationLabel"],
+        tickangle=-40,
+        tickfont=dict(size=10),
+    )
+    fig.update_yaxes(**AXIS_STYLE, title="延誤（分）", rangemode="tozero")
+    return fig
+
+
+def _build_journey_timeline_chart(detail_df: pd.DataFrame) -> go.Figure | None:
+    chart_df = detail_df.copy()
+    if "StopSeq" not in chart_df.columns:
+        chart_df["StopSeq"] = range(1, len(chart_df) + 1)
+    time_col = "ScheduledDep" if "ScheduledDep" in chart_df.columns else "ScheduledArr"
+    if time_col not in chart_df.columns:
+        return None
+    chart_df[time_col] = pd.to_datetime(chart_df[time_col], format="%H:%M", errors="coerce")
+    chart_df = chart_df.dropna(subset=[time_col])
+    if chart_df.empty:
+        return None
+
+    chart_df["DelayTime"] = pd.to_numeric(chart_df["DelayTime"], errors="coerce").fillna(0)
+    chart_df["ActualTime"] = chart_df[time_col] + pd.to_timedelta(chart_df["DelayTime"], unit="m")
+    chart_df["StationLabel"] = chart_df.apply(
+        lambda r: f"{int(r['StopSeq'])}｜{r['StationName']}" if pd.notna(r.get("StopSeq")) else str(r.get("StationName", "")),
+        axis=1,
+    )
+    chart_df["Status"] = chart_df["DelayTime"].apply(_delay_status)
+
+    fig = go.Figure()
+    fig.add_trace(
+        go.Scatter(
+            x=chart_df[time_col],
+            y=chart_df["StationLabel"],
+            mode="lines+markers",
+            name="表定",
+            line=dict(color="rgba(158,176,196,0.42)", width=2),
+            marker=dict(size=8, color="rgba(158,176,196,0.72)"),
+            hovertemplate="<b>%{y}</b><br>表定 %{x|%H:%M}<extra></extra>",
+        )
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=chart_df["ActualTime"],
+            y=chart_df["StationLabel"],
+            mode="lines+markers",
+            name="實際",
+            line=dict(color=BLUE, width=2.6),
+            marker=dict(
+                size=10,
+                color=chart_df["DelayTime"].apply(_delay_color),
+                line=dict(width=1.3, color=BG_COLOR),
+            ),
+            customdata=chart_df[["DelayTime", "Status"]].values,
+            hovertemplate="<b>%{y}</b><br>實際 %{x|%H:%M}<br>延誤 %{customdata[0]} 分<br>%{customdata[1]}<extra></extra>",
+        )
     )
     fig.update_layout(
-        **PLOTLY_THEME,
-        title=dict(text=title, font=dict(size=14, color="#e6edf3")),
-        height=400,
-        xaxis=dict(**AXIS_STYLE, title="停靠順序｜車站", tickangle=-40, tickfont=dict(size=10)),
-        yaxis=dict(**AXIS_STYLE, title="誤點（分鐘）", rangemode="tozero"),
-        showlegend=False,
+        **{**PLOTLY_THEME, "margin": dict(l=16, r=16, t=20, b=16)},
+        height=max(320, 36 * len(chart_df)),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
     )
-    st.plotly_chart(fig, use_container_width=True)
+    fig.update_xaxes(**AXIS_STYLE, title="時間")
+    fig.update_yaxes(**AXIS_STYLE, title=None, autorange="reversed")
+    return fig
 
 
-# ══════════════════════════════════════════════════════════════
-#  主渲染函數
-# ══════════════════════════════════════════════════════════════
+def _render_live_view(train_no: str, today_str: str, schedule_df: pd.DataFrame | None) -> None:
+    section_title(f"即時動態｜{train_no} 次｜{today_str}")
+    st.caption("資料來源：TDX TrainLiveBoard API。即時模式只顯示列車目前所在位置，非全程停靠紀錄。")
+    with st.spinner("呼叫 TDX API 中…"):
+        live_df = _fetch_train_live(train_no)
+
+    if live_df.empty:
+        st.warning(f"查無 {train_no} 次的即時資料。可能尚未出發、已到終點，或車次號碼有誤。")
+        return
+
+    row = live_df.iloc[0]
+    update_time = str(row.get("UpdateTime", ""))[:19].replace("T", " ")
+    meta = _lookup_schedule_meta(schedule_df, train_no)
+    route_text = _resolve_route_text(meta)
+
+    c1, c2, c3, c4 = st.columns(4)
+    with c1:
+        kpi_card("車種", str(meta.get("TrainType") or row.get("TrainType") or "-"), "blue")
+    with c2:
+        kpi_card("目前位置", str(row.get("StationName") or row.get("StationID") or "-"), "green")
+    with c3:
+        live_delay = float(row.get("DelayTime", 0) or 0)
+        kpi_card("即時延誤", f"{live_delay:.0f} 分", "red" if live_delay >= 5 else "yellow" if live_delay >= 2 else "green")
+    with c4:
+        kpi_card("行駛區間", route_text, "blue", update_time if update_time else "—")
+
+    note_card(
+        "即時模式限制",
+        "今天的查詢只會回傳列車目前所在車站。如果你要看完整沿線延誤累積，請改查歷史日期。",
+    )
+
+
+def _render_history_view(
+    df: pd.DataFrame,
+    train_no: str,
+    sel_date: str,
+    schedule_df: pd.DataFrame | None,
+    processor,
+) -> None:
+    section_title(f"旅程視圖｜{train_no} 次｜{sel_date}")
+    sub = _get_history(df, train_no, str(sel_date))
+    if sub.empty:
+        st.warning(f"查無 {sel_date} 日 {train_no} 次的資料，可能該日未行駛或爬蟲未覆蓋。")
+        return
+
+    sub = _enrich_station_names(sub, processor)
+    detail_df = _build_stop_detail(sub, processor, train_no)
+    detail_df = _enrich_station_names(detail_df, processor)
+    detail_df["DelayTime"] = pd.to_numeric(detail_df.get("DelayTime"), errors="coerce")
+
+    meta = _lookup_schedule_meta(schedule_df, train_no)
+    fallback_from = str(detail_df["StationName"].iloc[0]) if not detail_df.empty else ""
+    fallback_to = str(detail_df["StationName"].iloc[-1]) if not detail_df.empty else ""
+    route_text = _resolve_route_text(meta, fallback_from, fallback_to)
+    train_type = meta.get("TrainType") or (sub["TrainType"].iloc[0] if "TrainType" in sub.columns and not sub.empty else "-")
+    first_dep = meta.get("FirstDep") or (detail_df["ScheduledDep"].dropna().iloc[0] if "ScheduledDep" in detail_df.columns and detail_df["ScheduledDep"].notna().any() else "-")
+    last_arr = meta.get("LastArr") or (detail_df["ScheduledArr"].dropna().iloc[-1] if "ScheduledArr" in detail_df.columns and detail_df["ScheduledArr"].notna().any() else "-")
+
+    meta_cols = st.columns(5)
+    with meta_cols[0]:
+        kpi_card("車種", str(train_type), "blue")
+    with meta_cols[1]:
+        kpi_card("始發站", str(meta.get("FromStation") or fallback_from or "-"), "blue")
+    with meta_cols[2]:
+        kpi_card("終點站", str(meta.get("ToStation") or fallback_to or "-"), "blue")
+    with meta_cols[3]:
+        kpi_card("始發時間", str(first_dep), "green")
+    with meta_cols[4]:
+        kpi_card("終到時間", str(last_arr), "green")
+    st.caption(f"行駛區間：{route_text}")
+
+    summary = _journey_summary(detail_df)
+    insight_col, stats_col = st.columns([1.0, 1.3], gap="large")
+    with insight_col:
+        story_card(
+            "最早出現研究誤點",
+            summary["first_delay_station"],
+            f"從這一站開始延誤達 2 分鐘以上，後續站點就要觀察是否持續累積。",
+            tone="yellow" if summary["research_delay_count"] else "green",
+        )
+        story_card(
+            "延誤峰值",
+            f"{summary['peak_station']} · {summary['peak_delay']:.0f} 分",
+            "這是整段旅程中延誤最嚴重的站點，可回頭對照路段或前站傳遞效應。",
+            tone="red" if summary["peak_delay"] >= 5 else "yellow",
+        )
+        story_card(
+            "終點狀態",
+            f"{summary['end_delay']:.0f} 分",
+            "終點延誤低，不代表中途旅客沒有感受到延誤；這正是這頁要看的重點。",
+            tone="blue",
+        )
+    with stats_col:
+        s1, s2, s3, s4 = st.columns(4)
+        with s1:
+            kpi_card("停靠站數", f"{summary['stop_count']}", "blue")
+        with s2:
+            kpi_card("平均延誤", f"{summary['avg_delay']:.2f} 分", "yellow" if summary["avg_delay"] >= 2 else "green")
+        with s3:
+            kpi_card("研究誤點站", f"{summary['research_delay_count']} 站", "yellow", "≥ 2 分")
+        with s4:
+            kpi_card("官方誤點站", f"{summary['official_delay_count']} 站", "red", "≥ 5 分")
+        note_card(
+            "判讀順序",
+            "先看延誤強度圖確認哪幾站開始失控，再看時間軸比較表定與實際時間，最後回到明細表查每站狀態。",
+        )
+
+    chart_left, chart_right = st.columns([1.2, 1.0], gap="large")
+    with chart_left:
+        section_title("延誤強度")
+        st.plotly_chart(
+            _build_delay_profile_chart(detail_df, f"{train_no} 次 {sel_date} 各站延誤強度"),
+            use_container_width=True,
+        )
+    with chart_right:
+        section_title("旅程時間軸")
+        timeline_fig = _build_journey_timeline_chart(detail_df)
+        if timeline_fig is not None:
+            st.plotly_chart(timeline_fig, use_container_width=True)
+        else:
+            st.info("目前缺少足夠的表定時間欄位，暫時無法建立旅程時間軸。")
+
+    with st.expander("停靠明細"):
+        show_df = detail_df.copy()
+        if "DelayTime" in show_df.columns:
+            show_df["狀態"] = show_df["DelayTime"].apply(_delay_status)
+        show_cols = [
+            c for c in [
+                "StopSeq",
+                "StationName",
+                "ScheduledArr",
+                "ScheduledDep",
+                "ActualDep",
+                "DelayTime",
+                "狀態",
+                "PrevDelay",
+            ]
+            if c in show_df.columns
+        ]
+        renamed = show_df[show_cols].rename(
+            columns={
+                "StopSeq": "停靠序",
+                "StationName": "車站",
+                "ScheduledArr": "表定到站",
+                "ScheduledDep": "表定開車",
+                "ActualDep": "實際開車",
+                "DelayTime": "延誤(分)",
+                "PrevDelay": "前站延誤",
+            }
+        )
+        st.dataframe(renamed, use_container_width=True, hide_index=True)
+
+    with st.expander("指標說明"):
+        st.markdown(
+            """
+            | 指標 | 說明 |
+            |------|------|
+            | **研究誤點站** | `DelayTime >= 2` 分鐘 |
+            | **官方誤點站** | `DelayTime >= 5` 分鐘 |
+            | **延誤強度圖** | 看哪一站開始累積、哪一站達到峰值 |
+            | **旅程時間軸** | 比較表定與實際通過時刻，觀察整趟旅程是否追回時間 |
+            """
+        )
+
 
 def render(df: pd.DataFrame, **kwargs):
-    page_header("◗", "車次追蹤", "指定日期 × 車次全程誤點分析")
+    page_header("◗", "車次追蹤", "把單班次沿線停靠紀錄轉成可讀的旅程延誤視圖")
     schedule_df = kwargs.get("schedule_df")
     processor = kwargs.get("processor")
 
     today_str = date.today().strftime("%Y-%m-%d")
+    available_dates = sorted(df["Date"].astype(str).unique(), reverse=True) if not df.empty else []
+    if today_str not in available_dates:
+        available_dates = [today_str] + available_dates
 
-    # ── 輸入區 ─────────────────────────────────────────────────────
-    col_a, col_b, col_c = st.columns([2, 2, 1])
-
+    col_a, col_b, col_c = st.columns([1.5, 1.6, 0.6], gap="large")
     with col_a:
-        available_dates = sorted(df["Date"].unique(), reverse=True) if not df.empty else []
-        if today_str not in [str(d) for d in available_dates]:
-            available_dates = [today_str] + list(available_dates)
-        sel_date = st.selectbox("選擇日期", available_dates, key="tracker_date")
-
+        sel_date = st.selectbox("選擇日期", available_dates, key="tracker_date_v2")
     with col_b:
-        is_today = (str(sel_date) == today_str)
+        is_today = str(sel_date) == today_str
         if not is_today and not df.empty:
-            day_trains = sorted(
-                df[df["Date"].astype(str) == str(sel_date)]["TrainNo"].astype(str).unique()
-            )
-            train_input = st.selectbox("選擇車次", day_trains, key="tracker_train_sel")
+            day_trains = sorted(df[df["Date"].astype(str) == str(sel_date)]["TrainNo"].astype(str).unique())
+            train_input = st.selectbox("選擇車次", day_trains, key="tracker_train_sel_v2")
         else:
-            train_input = st.text_input("輸入車次號碼", placeholder="例如：131", key="tracker_train_txt")
-
+            train_input = st.text_input("輸入車次號碼", placeholder="例如：131", key="tracker_train_txt_v2")
     with col_c:
-        st.markdown("<div style='margin-top:28px'></div>", unsafe_allow_html=True)
-        search = st.button("🔍 查詢", use_container_width=True, type="primary")
+        st.markdown("<div style='height: 1.7rem;'></div>", unsafe_allow_html=True)
+        search = st.button("查詢", use_container_width=True, type="primary")
 
     if not search:
-        st.info("請選擇日期與車次後按下查詢。")
+        note_card("使用方式", "先選日期，再選車次。歷史日期會顯示完整旅程，即時日期只會顯示目前所在位置。")
         return
 
     train_no = str(train_input).strip()
@@ -295,108 +545,7 @@ def render(df: pd.DataFrame, **kwargs):
         st.warning("請輸入車次號碼。")
         return
 
-    st.markdown("---")
-
-    # ══ 當天：即時 API ═══════════════════════════════════════════════════════
     if is_today:
-        section_title(f"🟢 即時動態\u3000{train_no} 次\u3000{today_str}")
-        st.caption("資料來源：TDX TrainLiveBoard API（即時）。此 API 只回傳列車目前所在車站，非全程記錄。")
-
-        with st.spinner("呼叫 TDX API 中…"):
-            live_df = _fetch_train_live(train_no)
-
-        if live_df.empty:
-            st.warning(f"查無 {train_no} 次的即時資料。可能尚未出發、已到終點，或車次號碼有誤。")
-            return
-
-        r = live_df.iloc[0]
-        update_time = str(r.get("UpdateTime", ""))[:19].replace("T", " ")
-        meta = _lookup_schedule_meta(schedule_df, train_no)
-        route_text = _resolve_route_text(meta)
-
-        cols = st.columns(4)
-        cols[0].metric("車種", meta.get("TrainType") or r.get("TrainType", "-"))
-        cols[1].metric("目前位置", r.get("StationName", r.get("StationID", "-")))
-        cols[2].metric("即時誤點", f"{r.get('DelayTime', 0)} min")
-        cols[3].metric("行駛區間", route_text)
-        st.caption(f"資料更新時間：{update_time}")
-        st.info("💡 如需查看完整全程誤點折線，請選擇歷史日期（今天的資料會在明天可供查詢）。")
-
-    # ══ 歷史日期：CSV 全程折線 ═══════════════════════════════════════════
+        _render_live_view(train_no, today_str, schedule_df)
     else:
-        section_title(f"📈 全程誤點\u3000{train_no} 次\u3000{sel_date}")
-
-        sub = _get_history(df, train_no, str(sel_date))
-        if sub.empty:
-            st.warning(f"查無 {sel_date} 日 {train_no} 次的資料，可能該日未行駛或爬蟲未覆蓋。")
-            return
-        sub = _enrich_station_names(sub, processor)
-
-        meta = _lookup_schedule_meta(schedule_df, train_no)
-        fallback_from = sub["StationName"].iloc[0] if "StationName" in sub.columns and not sub.empty else ""
-        fallback_to = sub["StationName"].iloc[-1] if "StationName" in sub.columns and not sub.empty else ""
-        train_type = meta.get("TrainType") or (sub["TrainType"].iloc[0] if "TrainType" in sub.columns else "-")
-        first_arr = meta.get("FirstDep") or (sub["FirstDep"].iloc[0] if "FirstDep" in sub.columns else "-")
-        last_arr = meta.get("LastArr") or (sub["LastArr"].iloc[0] if "LastArr" in sub.columns else "-")
-        route_text = _resolve_route_text(meta, fallback_from, fallback_to)
-        from_station = meta.get("FromStation") or fallback_from or "-"
-        to_station = meta.get("ToStation") or fallback_to or "-"
-
-        meta_cols = st.columns(5)
-        meta_cols[0].metric("車種", train_type)
-        meta_cols[1].metric("始發站", from_station)
-        meta_cols[2].metric("終點站", to_station)
-        meta_cols[3].metric("始發時間", first_arr)
-        meta_cols[4].metric("終到時間", last_arr)
-        st.caption(f"行駛區間：{route_text}")
-
-        st.markdown("<div style='margin-top:12px'></div>", unsafe_allow_html=True)
-        _draw_kpi_row(sub)
-
-        delay_tags = _format_delay_station_tags(sub)
-        if delay_tags:
-            st.markdown("**誤點站**")
-            st.caption(" · ".join(delay_tags))
-        else:
-            st.caption("全程各站皆為準點。")
-
-        st.markdown("<div style='margin-top:12px'></div>", unsafe_allow_html=True)
-        _draw_delay_chart(sub, f"{train_no} 次 {sel_date} 全程誤點（分鐘）")
-
-        with st.expander("📋 完整停靠明細"):
-            detail_df = _build_stop_detail(sub, processor, train_no)
-            detail_df = detail_df.copy()
-            if "DelayTime" in detail_df.columns:
-                detail_df["DelayStatus"] = detail_df["DelayTime"].apply(
-                    lambda d: "超標誤點" if pd.notna(d) and d >= 5 else ("輕微誤點" if pd.notna(d) and d >= 1 else "準點")
-                )
-            show_cols = [c for c in [
-                "StopSeq", "StationName", "ScheduledArr", "ScheduledDep",
-                "DelayTime", "DelayStatus", "IsDelayed", "PrevDelay"
-            ] if c in detail_df.columns]
-            st.dataframe(
-                detail_df[show_cols].rename(columns={
-                    "StopSeq": "停靠序",
-                    "StationName": "車站",
-                    "ScheduledArr": "表定到站",
-                    "ScheduledDep": "表定開車",
-                    "DelayTime": "誤點(分)",
-                    "DelayStatus": "狀態",
-                    "IsDelayed": "超標",
-                    "PrevDelay": "前站誤點",
-                }),
-                use_container_width=True,
-                hide_index=True,
-            )
-
-        with st.expander("📊 指標說明"):
-            st.markdown("""
-            | 指標 | 說明 |
-            |------|------|
-            | **誤點分鐘** | TDX `StationLiveBoard` 直接回傳，來自臺鐵 CTC 系統 |
-            | **超標站數** | `DelayTime ≥ 5` 分鐘（官方口徑）|
-            | **準點站數** | `DelayTime = 0` 分鐘 |
-            | **🔴 紅點** | ≥5 分鐘 |
-            | **🟡 橘點** | 1–4 分鐘 |
-            | **🟢 綠點** | 準點（0 分鐘）|
-            """)
+        _render_history_view(df, train_no, str(sel_date), schedule_df, processor)

@@ -2,6 +2,7 @@
 Reusable UI Components — TRA Delay Research Dashboard
 =====================================================
 """
+from html import escape
 import streamlit as st
 from views.theme import (
     BLUE, GREEN, YELLOW, RED, CYAN,
@@ -99,3 +100,30 @@ def sidebar_stats(data_source: str, total_count: int, date_range_start: str):
         起始日期　<span class="val">{date_range_start}</span>
     </div>
     """, unsafe_allow_html=True)
+
+
+def story_card(eyebrow: str, value: str, body: str, tone: str = "blue"):
+    """Narrative summary card for dashboard insights."""
+    st.markdown(
+        f"""
+        <div class="story-card {escape(tone)}">
+            <div class="eyebrow">{escape(eyebrow)}</div>
+            <div class="value">{escape(value)}</div>
+            <div class="body">{escape(body)}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def note_card(title: str, body: str):
+    """Inline note panel for short explanatory text."""
+    st.markdown(
+        f"""
+        <div class="note-card">
+            <div class="title">{escape(title)}</div>
+            <div class="body">{escape(body)}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )

@@ -1,181 +1,241 @@
 """
-數據總覽 (Data Overview) — KPIs + Charts + Trends
+數據總覽 (Data Overview) — Trends, comparisons, and distributions
 """
-import streamlit as st
 import pandas as pd
+import streamlit as st
 import plotly.graph_objects as go
-from views.theme import PLOTLY_THEME, AXIS_STYLE, COLORS, BLUE, GREEN, TEXT_SECONDARY
-from views.components import page_header, kpi_card, section_title
+
+from views.theme import PLOTLY_THEME, AXIS_STYLE, BLUE, GREEN, YELLOW, RED, TEXT_SECONDARY
+from views.components import kpi_card, note_card, page_header, section_title
+
+
+def _build_train_type_delay(df: pd.DataFrame) -> go.Figure | None:
+    if df.empty or "TrainType" not in df.columns:
+        return None
+    summary = (
+        df.groupby("TrainType")
+        .agg(平均誤點=("DelayTime", "mean"), 準點率=("IsDelayed", lambda x: (1 - x.mean()) * 100))
+        .reset_index()
+        .sort_values("平均誤點")
+    )
+    if summary.empty:
+        return None
+
+    bar_colors = [GREEN if v < 1.5 else BLUE if v < 3 else YELLOW if v < 5 else RED for v in summary["平均誤點"]]
+    fig = go.Figure(
+        go.Bar(
+            x=summary["平均誤點"],
+            y=summary["TrainType"],
+            orientation="h",
+            marker=dict(color=bar_colors, line=dict(width=0)),
+            text=summary["平均誤點"].round(2).astype(str) + " 分",
+            textposition="outside",
+            customdata=summary["準點率"].round(1),
+            hovertemplate="<b>%{y}</b><br>平均誤點 %{x:.2f} 分<br>準點率 %{customdata:.1f}%<extra></extra>",
+        )
+    )
+    fig.update_layout(**{**PLOTLY_THEME, "margin": dict(l=16, r=36, t=20, b=16)}, height=330)
+    fig.update_xaxes(**AXIS_STYLE, title="平均誤點（分）", rangemode="tozero")
+    fig.update_yaxes(**AXIS_STYLE, title=None)
+    return fig
+
+
+def _build_period_rate(df: pd.DataFrame) -> go.Figure | None:
+    if df.empty or "Period" not in df.columns:
+        return None
+    summary = (
+        df.groupby("Period")
+        .agg(準點率=("IsDelayed", lambda x: round((1 - x.mean()) * 100, 1)), 平均誤點=("DelayTime", "mean"))
+        .reset_index()
+    )
+    order = ["深夜", "離峰", "尖峰"]
+    summary["Period"] = pd.Categorical(summary["Period"], categories=order, ordered=True)
+    summary = summary.sort_values("Period")
+
+    fig = go.Figure(
+        go.Scatter(
+            x=summary["準點率"],
+            y=summary["Period"],
+            mode="markers+text",
+            marker=dict(
+                size=(summary["平均誤點"].fillna(0).clip(lower=0.5) * 9).tolist(),
+                color=[GREEN if v >= 95 else BLUE if v >= 90 else YELLOW for v in summary["準點率"]],
+                line=dict(width=2, color="#07111a"),
+            ),
+            text=summary["準點率"].astype(str) + "%",
+            textposition="middle right",
+            customdata=summary["平均誤點"].round(2),
+            hovertemplate="<b>%{y}</b><br>準點率 %{x:.1f}%<br>平均誤點 %{customdata:.2f} 分<extra></extra>",
+            showlegend=False,
+        )
+    )
+    fig.update_layout(**{**PLOTLY_THEME, "margin": dict(l=16, r=30, t=20, b=16)}, height=330)
+    fig.update_xaxes(**AXIS_STYLE, title="準點率 (%)", range=[80, 100])
+    fig.update_yaxes(**AXIS_STYLE, title=None)
+    return fig
+
+
+def _build_delay_distribution(df: pd.DataFrame) -> go.Figure | None:
+    if df.empty or "DelayTime" not in df.columns:
+        return None
+    clipped = df["DelayTime"].clip(upper=30)
+    if clipped.empty:
+        return None
+
+    p50 = float(clipped.quantile(0.5))
+    p90 = float(clipped.quantile(0.9))
+    p95 = float(clipped.quantile(0.95))
+
+    fig = go.Figure(
+        go.Histogram(
+            x=clipped,
+            nbinsx=30,
+            marker=dict(color="rgba(75,163,255,0.58)", line=dict(width=0)),
+            hovertemplate="誤點 %{x} 分<br>筆數 %{y}<extra></extra>",
+        )
+    )
+    for value, label, color in [
+        (p50, "P50", GREEN),
+        (p90, "P90", YELLOW),
+        (p95, "P95", RED),
+    ]:
+        fig.add_vline(x=value, line_color=color, line_width=2, line_dash="dot")
+        fig.add_annotation(
+            x=value,
+            y=1,
+            yref="paper",
+            text=f"{label} {value:.1f}",
+            showarrow=False,
+            font=dict(size=10, color=color),
+            xanchor="left",
+        )
+    fig.update_layout(**{**PLOTLY_THEME, "margin": dict(l=16, r=16, t=24, b=16)}, height=300)
+    fig.update_xaxes(**AXIS_STYLE, title="誤點分鐘（截斷至 30 分）")
+    fig.update_yaxes(**AXIS_STYLE, title="筆數")
+    return fig
+
+
+def _build_punctuality_gap(df: pd.DataFrame) -> go.Figure | None:
+    if df.empty or "TrainType" not in df.columns or "IsTerminal" not in df.columns:
+        return None
+    terminal_df = df[df["IsTerminal"] == 1].copy()
+    if terminal_df.empty:
+        return None
+
+    official_col = "IsDelayed_Official" if "IsDelayed_Official" in terminal_df.columns else "IsDelayed"
+    official = (
+        terminal_df.groupby("TrainType")[official_col]
+        .apply(lambda x: round((1 - x.mean()) * 100, 1))
+        .reset_index(name="官方準點率")
+    )
+    research = (
+        df.groupby("TrainType")["IsDelayed"]
+        .apply(lambda x: round((1 - x.mean()) * 100, 1))
+        .reset_index(name="研究準點率")
+    )
+    compare = official.merge(research, on="TrainType", how="inner")
+    if compare.empty:
+        return None
+    compare["差距"] = compare["官方準點率"] - compare["研究準點率"]
+    compare = compare.sort_values("差距", ascending=False)
+
+    fig = go.Figure()
+    for _, row in compare.iterrows():
+        fig.add_trace(
+            go.Scatter(
+                x=[row["研究準點率"], row["官方準點率"]],
+                y=[row["TrainType"], row["TrainType"]],
+                mode="lines",
+                line=dict(color="rgba(158,176,196,0.28)", width=3),
+                hoverinfo="skip",
+                showlegend=False,
+            )
+        )
+    fig.add_trace(
+        go.Scatter(
+            x=compare["研究準點率"],
+            y=compare["TrainType"],
+            mode="markers",
+            marker=dict(size=11, color=BLUE, line=dict(width=1.5, color="#07111a")),
+            name="研究",
+            hovertemplate="<b>%{y}</b><br>研究準點率 %{x:.1f}%<extra></extra>",
+        )
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=compare["官方準點率"],
+            y=compare["TrainType"],
+            mode="markers+text",
+            marker=dict(size=11, color=GREEN, line=dict(width=1.5, color="#07111a")),
+            text=compare["差距"].map(lambda v: f"{v:+.1f}pt"),
+            textposition="middle right",
+            textfont=dict(size=10, color=TEXT_SECONDARY),
+            name="官方",
+            hovertemplate="<b>%{y}</b><br>官方準點率 %{x:.1f}%<extra></extra>",
+        )
+    )
+    fig.update_layout(
+        **{**PLOTLY_THEME, "margin": dict(l=16, r=50, t=20, b=16)},
+        height=300,
+        legend=dict(orientation="h", yanchor="bottom", y=1.03, xanchor="left", x=0),
+    )
+    fig.update_xaxes(**AXIS_STYLE, title="準點率 (%)", range=[75, 100])
+    fig.update_yaxes(**AXIS_STYLE, title=None)
+    return fig
 
 
 def render(df, filtered_df, date_label, **kwargs):
-    page_header("◈", "數據總覽", "全台列車誤點基礎統計 · Descriptive Statistics")
+    page_header("◈", "數據總覽", "把資料拆成趨勢、比較與分布三個閱讀層次")
 
-    _ddf = filtered_df
-    st.caption(f"目前顯示範圍：{date_label}　共 {len(_ddf):,} 筆觀測")
-
-    if _ddf.empty:
+    if filtered_df.empty:
         st.warning("此日期無資料，請重新選擇。")
         return
 
-    # ── KPI Row ───────────────────────────────────────────────
-    c1, c2, c3, c4, c5 = st.columns(5)
-    with c1:
-        kpi_card("觀測筆數", f"{len(_ddf):,}", "blue")
-    with c2:
-        kpi_card("準點率", f"{round((1-_ddf['IsDelayed'].mean())*100,1)}%", "green")
-    with c3:
-        avg_d = round(_ddf["DelayTime"].mean(), 2)
-        kpi_card("平均誤點", f"{avg_d} min", "yellow" if avg_d > 1 else "green")
-    with c4:
-        kpi_card("最大誤點", f"{int(_ddf['DelayTime'].max())} min", "red")
-    with c5:
-        kpi_card("資料天數", f"{_ddf['Date'].nunique()} 天")
+    scope_df = filtered_df.copy()
+    total = len(scope_df)
+    punctuality = round((1 - scope_df["IsDelayed"].mean()) * 100, 1)
+    avg_delay = round(scope_df["DelayTime"].mean(), 2)
+    p90 = float(scope_df["DelayTime"].quantile(0.9))
 
-    with st.expander("📊 指標說明"):
-        st.markdown("""
-        | 指標 | 計算方式 | 備註 |
-        |------|----------|------|
-        | **觀測筆數** | 一班次在一個車站的到站紀錄 | TDX `StationLiveBoard` 每 10 分鐘抓取 |
-        | **準點率** | `(1 − IsDelayed.mean()) × 100%` | `IsDelayed = 1` 當 `DelayTime ≥ 2分鐘` |
-        | **平均誤點** | `DelayTime` 算術平均（含 0 分鐘） | 單位：分鐘 |
-        | **最大誤點** | `DelayTime` 最大值 | 單位：分鐘 |
-        | **資料天數** | `Date` 不重複日期數 | |
-        """)
+    st.caption(f"目前顯示範圍：{date_label}　共 {total:,} 筆觀測")
 
-    st.markdown("---")
+    k1, k2, k3, k4 = st.columns(4)
+    with k1:
+        kpi_card("觀測筆數", f"{total:,}", "blue", "班次 × 車站紀錄")
+    with k2:
+        kpi_card("研究準點率", f"{punctuality}%", "green")
+    with k3:
+        kpi_card("平均誤點", f"{avg_delay} 分", "yellow" if avg_delay >= 2 else "green")
+    with k4:
+        kpi_card("P90 誤點", f"{p90:.1f} 分", "red", "最慢 10% 的延誤門檻")
 
-    # ── 2×2 Chart Grid ────────────────────────────────────────
-    col_a, col_b = st.columns(2, gap="large")
-
-    with col_a:
-        section_title("各車種平均誤點")
-        type_d = _ddf.groupby("TrainType")["DelayTime"].mean().sort_values(ascending=True).reset_index()
-        fig = go.Figure(go.Bar(
-            x=type_d["DelayTime"], y=type_d["TrainType"],
-            orientation="h",
-            marker=dict(
-                color=type_d["DelayTime"],
-                colorscale=[[0, GREEN], [0.5, "#f59e0b"], [1, "#ef4444"]],
-                showscale=False,
-                line=dict(width=0),
-            ),
-            text=type_d["DelayTime"].round(2).astype(str) + " min",
-            textposition="outside",
-            textfont=dict(size=11, color=TEXT_SECONDARY),
-        ))
-        fig.update_layout(**PLOTLY_THEME, height=260,
-                          xaxis=dict(**AXIS_STYLE, title="平均誤點（分鐘）"),
-                          yaxis=dict(**AXIS_STYLE))
-        st.plotly_chart(fig, use_container_width=True)
-
-        with st.expander("📊 說明", key="exp_traintype"):
-            st.markdown("""
-            依 `TrainType` 分組取 `DelayTime` 算術平均。
-            顏色漸層：🟢 低誤點 → 🟡 中 → 🔴 高。
-            停靠站越多的車種累積誤點機會較高。
-            """)
-
-    with col_b:
-        section_title("各時段準點率")
-        if "Period" in _ddf.columns:
-            period_d = _ddf.groupby("Period")["IsDelayed"].apply(
-                lambda x: round((1-x.mean())*100, 1)).reset_index(name="準點率")
-            order = ["深夜", "離峰", "尖峰"]
-            period_d["Period"] = pd.Categorical(period_d["Period"], categories=order, ordered=True)
-            period_d = period_d.sort_values("Period")
-            fig = go.Figure(go.Bar(
-                x=period_d["Period"], y=period_d["準點率"],
-                marker=dict(
-                    color=[GREEN, BLUE, "#f59e0b"],
-                    line=dict(width=0),
-                ),
-                text=period_d["準點率"].astype(str) + "%",
-                textposition="outside",
-                textfont=dict(size=12, color=TEXT_SECONDARY),
-            ))
-            fig.update_layout(**PLOTLY_THEME, height=260,
-                              yaxis=dict(**AXIS_STYLE, range=[85, 100], title="準點率 (%)"),
-                              xaxis=dict(**AXIS_STYLE))
+    top_left, top_right = st.columns(2, gap="large")
+    with top_left:
+        section_title("比較：各車種平均誤點")
+        fig = _build_train_type_delay(scope_df)
+        if fig is not None:
+            st.plotly_chart(fig, use_container_width=True)
+    with top_right:
+        section_title("比較：各時段準點率")
+        fig = _build_period_rate(scope_df)
+        if fig is not None:
             st.plotly_chart(fig, use_container_width=True)
 
-            with st.expander("📊 說明", key="exp_period"):
-                st.markdown("""
-                **時段分類**（依 `ScheduledArr`）：
-                - **尖峰**：06:00–09:00 及 17:00–20:00
-                - **深夜**：00:00–06:00
-                - **離峰**：其餘時段
-                """)
-
-    st.markdown("---")
-    col_c, col_d = st.columns(2, gap="large")
-
-    with col_c:
-        section_title("誤點分鐘數分布")
-        delay_clip = _ddf[_ddf["DelayTime"] <= 30]["DelayTime"]
-        fig = go.Figure(go.Histogram(
-            x=delay_clip, nbinsx=30,
-            marker=dict(color=BLUE, line=dict(width=0)),
-            opacity=0.85,
-        ))
-        fig.update_layout(**PLOTLY_THEME, height=240,
-                          xaxis=dict(**AXIS_STYLE, title="誤點分鐘（截至30分）"),
-                          yaxis=dict(**AXIS_STYLE, title="筆數"))
-        st.plotly_chart(fig, use_container_width=True)
-
-        with st.expander("📊 說明", key="exp_histogram"):
-            st.markdown("""
-            為避免極端值壓縮圖形，截斷顯示 ≤ 30 分鐘。
-            分布高度右偏為台鐵誤點資料的典型型態。
-            """)
-
-    with col_d:
-        section_title("假日 vs 平日")
-        if "HolidayType" in _ddf.columns:
-            hol_d = _ddf.groupby("HolidayType").agg(
-                準點率=("IsDelayed", lambda x: round((1-x.mean())*100, 1)),
-                平均誤點=("DelayTime", lambda x: round(x.mean(), 2)),
-                筆數=("IsDelayed", "count")
-            ).reset_index()
-            st.dataframe(
-                hol_d.style.format({"準點率": "{:.1f}%", "平均誤點": "{:.2f} min", "筆數": "{:,}"}),
-                use_container_width=True, hide_index=True
-            )
-            with st.expander("📊 說明", key="exp_holiday"):
-                st.markdown("""
-                `HolidayType` 細分：**平日** / **週末** / **國定假日**。
-                連假旅運量增加可能延長站停時間。
-                """)
-
-    # ── Daily Trend（固定顯示全量，並標示目前選取日期） ────────
-    st.markdown("---")
-    section_title("逐日準點率趨勢　　⚠ 此圖固定顯示全部日期")
-    daily = df.groupby("Date")["IsDelayed"].apply(
-        lambda x: round((1-x.mean())*100, 1)).reset_index(name="準點率")
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(
-        x=daily["Date"], y=daily["準點率"],
-        mode="lines+markers",
-        line=dict(color=BLUE, width=2.5),
-        marker=dict(size=6, color=BLUE),
-        fill="tozeroy",
-        fillcolor="rgba(59,130,246,0.06)",
-        name="全部日期",
-    ))
-    # 若有篩選日期，在該日加入標記
-    sel_daily = _ddf.groupby("Date")["IsDelayed"].apply(
-        lambda x: round((1-x.mean())*100, 1)).reset_index(name="準點率")
-    if len(sel_daily) < len(daily):
-        fig.add_trace(go.Scatter(
-            x=sel_daily["Date"], y=sel_daily["準點率"],
-            mode="markers",
-            marker=dict(size=11, color="#f59e0b", symbol="diamond",
-                        line=dict(width=2, color="#0a0e14")),
-            name=f"篩選中：{date_label}",
-        ))
-    fig.update_layout(**PLOTLY_THEME, height=220,
-                      yaxis=dict(**AXIS_STYLE, range=[85, 100], title="準點率 (%)"),
-                      xaxis=dict(**AXIS_STYLE),
-                      legend=dict(bgcolor="rgba(0,0,0,0)", font=dict(size=11)))
-    st.plotly_chart(fig, use_container_width=True)
-    st.caption("※ 折線固定顯示全部日期趨勢；若已選取特定日期，黃色菱形標示該日位置。")
+    bottom_left, bottom_right = st.columns(2, gap="large")
+    with bottom_left:
+        section_title("分布：誤點分鐘數")
+        fig = _build_delay_distribution(scope_df)
+        if fig is not None:
+            st.plotly_chart(fig, use_container_width=True)
+        note_card(
+            "分布判讀",
+            "這張圖看的是尾端風險，而不是平均表現。P90、P95 越高，代表少數極端延誤越常把整體拉壞。",
+        )
+    with bottom_right:
+        section_title("口徑落差：官方 vs 研究")
+        fig = _build_punctuality_gap(scope_df)
+        if fig is not None:
+            st.plotly_chart(fig, use_container_width=True)
+            st.caption("每條線代表同一車種的兩種準點率定義。右側越遠，表示官方口徑越寬鬆。")
+        else:
+            st.info("目前缺少足夠的終點站資料，暫時無法計算官方與研究口徑差距。")
