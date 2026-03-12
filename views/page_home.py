@@ -17,6 +17,7 @@ from views.theme import (
     TEXT_SECONDARY,
 )
 from views.components import kpi_card, note_card, section_title, story_card, method_step
+from views.navigation import goto_page
 
 
 def _safe_current_df(df: pd.DataFrame, filtered_df: pd.DataFrame | None) -> pd.DataFrame:
@@ -249,6 +250,15 @@ def render(df, filtered_df=None, date_label="📅 全部日期", **kwargs):
             weakest_period = str(by_period.index[0])
             weakest_period_pct = float(by_period.iloc[0])
 
+    focus_train_no = ""
+    focus_train_date = ""
+    focus_train_delay = 0.0
+    if {"TrainNo", "DelayTime"}.issubset(current_df.columns):
+        focus_row = current_df.sort_values("DelayTime", ascending=False).iloc[0]
+        focus_train_no = str(focus_row.get("TrainNo") or "").strip()
+        focus_train_date = str(focus_row.get("Date") or "").strip()
+        focus_train_delay = float(focus_row.get("DelayTime") or 0)
+
     with insight_col:
         section_title("本次觀察")
         story_card(
@@ -269,6 +279,35 @@ def render(df, filtered_df=None, date_label="📅 全部日期", **kwargs):
             f"該時段準點率約 {weakest_period_pct:.1f}%，值得優先交叉檢查路段與車種。",
             tone="yellow" if weakest_period_pct < 90 else "green",
         )
+        action_cols = st.columns(2)
+        with action_cols[0]:
+            if st.button("看高風險車種", key="home_go_type", use_container_width=True):
+                goto_page(
+                    "準點率分析",
+                    filters={"train_type": worst_type} if worst_type != "—" else None,
+                )
+        with action_cols[1]:
+            if st.button("看最弱時段", key="home_go_period", use_container_width=True):
+                goto_page(
+                    "準點率分析",
+                    filters={"period": weakest_period} if weakest_period != "—" else None,
+                )
+        if focus_train_no and st.button(
+            f"追最大延誤班次 {focus_train_no}",
+            key="home_go_tracker",
+            use_container_width=True,
+            type="primary",
+        ):
+            goto_page(
+                "車次追蹤",
+                tracker_date=focus_train_date,
+                tracker_train_no=focus_train_no,
+            )
+        st.caption(
+            f"目前最大單筆延誤為 {focus_train_delay:.1f} 分，點上方可直接切去班次追蹤。"
+            if focus_train_no else
+            "目前範圍缺少可直接追蹤的班次資訊。"
+        )
 
     chart_col, side_col = st.columns([1.25, 1.0], gap="large")
     with chart_col:
@@ -276,6 +315,8 @@ def render(df, filtered_df=None, date_label="📅 全部日期", **kwargs):
         fig = _build_train_type_lollipop(current_df)
         if fig is not None:
             st.plotly_chart(fig, use_container_width=True)
+        if st.button("在準點率分析中延伸檢查", key="home_go_punctuality", use_container_width=True):
+            goto_page("準點率分析")
     with side_col:
         section_title("時段表現")
         fig = _build_period_profile(current_df)
@@ -285,6 +326,8 @@ def render(df, filtered_df=None, date_label="📅 全部日期", **kwargs):
             "讀圖方式",
             "首頁只保留最先要回答的問題：最近整體是否變差、哪個車種最不穩、哪個時段最容易出現延誤。",
         )
+        if st.button("改看站點空間分布", key="home_go_heatmap", use_container_width=True):
+            goto_page("站點熱力圖")
 
     lower_left, lower_right = st.columns([1.15, 0.85], gap="large")
     with lower_left:
@@ -316,3 +359,13 @@ def render(df, filtered_df=None, date_label="📅 全部日期", **kwargs):
             + method_step("03", "模型解釋", "把延誤風險與嚴重度拆開估計，避免混讀。"),
             unsafe_allow_html=True,
         )
+        module_cols = st.columns(3)
+        with module_cols[0]:
+            if st.button("看總覽", key="home_go_overview", use_container_width=True):
+                goto_page("數據總覽")
+        with module_cols[1]:
+            if st.button("看熱力圖", key="home_go_heatmap2", use_container_width=True):
+                goto_page("站點熱力圖")
+        with module_cols[2]:
+            if st.button("跑模型", key="home_go_reg", use_container_width=True):
+                goto_page("OLS 迴歸")

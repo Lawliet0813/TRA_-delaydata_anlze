@@ -7,6 +7,7 @@ import plotly.graph_objects as go
 
 from views.theme import PLOTLY_THEME, AXIS_STYLE, BLUE, GREEN, YELLOW, RED, TEXT_SECONDARY
 from views.components import kpi_card, note_card, page_header, section_title
+from views.navigation import goto_page
 
 
 def _build_train_type_delay(df: pd.DataFrame) -> go.Figure | None:
@@ -196,6 +197,17 @@ def render(df, filtered_df, date_label, **kwargs):
     punctuality = round((1 - scope_df["IsDelayed"].mean()) * 100, 1)
     avg_delay = round(scope_df["DelayTime"].mean(), 2)
     p90 = float(scope_df["DelayTime"].quantile(0.9))
+    worst_type = ""
+    if "TrainType" in scope_df.columns:
+        type_rank = scope_df.groupby("TrainType")["DelayTime"].mean().sort_values(ascending=False)
+        if not type_rank.empty:
+            worst_type = str(type_rank.index[0])
+
+    weakest_period = ""
+    if "Period" in scope_df.columns:
+        period_rank = scope_df.groupby("Period")["IsDelayed"].apply(lambda x: (1 - x.mean()) * 100).sort_values()
+        if not period_rank.empty:
+            weakest_period = str(period_rank.index[0])
 
     st.caption(f"目前顯示範圍：{date_label}　共 {total:,} 筆觀測")
 
@@ -215,11 +227,21 @@ def render(df, filtered_df, date_label, **kwargs):
         fig = _build_train_type_delay(scope_df)
         if fig is not None:
             st.plotly_chart(fig, use_container_width=True)
+        if st.button("帶著這個車種去準點率分析", key="overview_go_type", use_container_width=True):
+            goto_page(
+                "準點率分析",
+                filters={"train_type": worst_type} if worst_type else None,
+            )
     with top_right:
         section_title("比較：各時段準點率")
         fig = _build_period_rate(scope_df)
         if fig is not None:
             st.plotly_chart(fig, use_container_width=True)
+        if st.button("帶著這個時段去準點率分析", key="overview_go_period", use_container_width=True):
+            goto_page(
+                "準點率分析",
+                filters={"period": weakest_period} if weakest_period else None,
+            )
 
     bottom_left, bottom_right = st.columns(2, gap="large")
     with bottom_left:
@@ -227,6 +249,8 @@ def render(df, filtered_df, date_label, **kwargs):
         fig = _build_delay_distribution(scope_df)
         if fig is not None:
             st.plotly_chart(fig, use_container_width=True)
+        if st.button("改看站點熱力與空間分布", key="overview_go_heatmap", use_container_width=True):
+            goto_page("站點熱力圖")
         note_card(
             "分布判讀",
             "這張圖看的是尾端風險，而不是平均表現。P90、P95 越高，代表少數極端延誤越常把整體拉壞。",
@@ -237,5 +261,18 @@ def render(df, filtered_df, date_label, **kwargs):
         if fig is not None:
             st.plotly_chart(fig, use_container_width=True)
             st.caption("每條線代表同一車種的兩種準點率定義。右側越遠，表示官方口徑越寬鬆。")
+            if st.button("切到準點率診斷頁細看", key="overview_go_gap", use_container_width=True):
+                goto_page("準點率分析")
         else:
             st.info("目前缺少足夠的終點站資料，暫時無法計算官方與研究口徑差距。")
+
+    action_cols = st.columns(3)
+    with action_cols[0]:
+        if st.button("追單一班次", key="overview_go_tracker", use_container_width=True):
+            goto_page("車次追蹤")
+    with action_cols[1]:
+        if st.button("看空間熱點", key="overview_go_heatmap_footer", use_container_width=True):
+            goto_page("站點熱力圖")
+    with action_cols[2]:
+        if st.button("跑模型解釋", key="overview_go_reg", use_container_width=True):
+            goto_page("OLS 迴歸")

@@ -14,6 +14,12 @@ if not CLOUD_MODE:
 
 from views.theme import CSS, TEXT_MUTED
 from views.components import sidebar_brand, sidebar_stats
+from views.filter_state import (
+    apply_global_filters,
+    build_scope_label,
+    render_global_filters,
+    render_scope_summary,
+)
 
 import views.page_home as page_home
 import views.page_overview as page_overview
@@ -21,9 +27,7 @@ import views.page_punctuality as page_punctuality
 import views.page_heatmap as page_heatmap
 import views.page_regression as page_regression
 import views.page_train_tracker as page_train_tracker
-import views.page_alerts as page_alerts
-import views.page_settings as page_settings
-import views.page_crawler_monitor as page_crawler_monitor
+import views.page_system_status as page_system_status
 
 # ══════════════════════════════════════════════════════════════
 #  頁面設定 & 主題
@@ -73,13 +77,32 @@ df, research_df = load_data()
 schedule_df = load_train_schedule()
 
 # ══════════════════════════════════════════════════════════════
-#  側邊欄
+#  側邊欄 / 導覽架構
 # ══════════════════════════════════════════════════════════════
-PAGES = [
-    "首頁", "數據總覽", "準點率分析", "站點熱力圖",
-    "車次追蹤", "OLS 迴歸", "異常通報", "爬蟲監控", "系統設定",
+NAV_GROUPS = [
+    {
+        "label": "總覽",
+        "pages": [
+            ("首頁", "⬡"),
+            ("數據總覽", "◈"),
+        ],
+    },
+    {
+        "label": "診斷",
+        "pages": [
+            ("準點率分析", "◎"),
+            ("站點熱力圖", "◉"),
+            ("車次追蹤", "◷"),
+            ("OLS 迴歸", "≋"),
+        ],
+    },
+    {
+        "label": "維運",
+        "pages": [
+            ("系統與資料狀態", "⚙"),
+        ],
+    },
 ]
-PAGE_ICONS = ["⬡", "◈", "◎", "◉", "◷", "≋", "⚠", "◆", "⚙"]
 PAGE_COPY = {
     "首頁": "研究主畫面，先看整體趨勢、目前樣態與最值得追的異常。",
     "數據總覽": "用描述統計拆解誤點的趨勢、比較與分布。",
@@ -87,17 +110,10 @@ PAGE_COPY = {
     "站點熱力圖": "從車站與路網空間分布理解誤點集中的區段。",
     "車次追蹤": "追單一車次的全程表現，確認延誤如何沿線累積。",
     "OLS 迴歸": "用可解釋的營運變數拆出風險與嚴重度的主要因素。",
-    "異常通報": "查看官方異常通報的原因分布與近期事件。",
-    "爬蟲監控": "確認本地採集流程、排程與 log 狀態是否正常。",
-    "系統設定": "檢查資料來源、憑證與維運設定。",
+    "系統與資料狀態": "把資料中心、異常通報與爬蟲監控整合在同一個維運入口。",
 }
 
 today = datetime.now().strftime("%Y-%m-%d")
-available_dates = (
-    sorted(df["Date"].dropna().unique().tolist(), reverse=True)
-    if not df.empty and "Date" in df.columns
-    else []
-)
 status_badge_cls = "badge-red"
 status_txt = "NO DATA"
 last_update_txt = ""
@@ -142,16 +158,21 @@ with st.sidebar:
     if "nav" not in st.session_state:
         st.session_state.nav = "首頁"
 
-    for icon, name in zip(PAGE_ICONS, PAGES):
-        is_active = st.session_state.nav == name
-        if st.button(
-            f"{icon}  {name}",
-            key=f"nav_{name}",
-            use_container_width=True,
-            type="primary" if is_active else "secondary",
-        ):
-            st.session_state.nav = name
-            st.rerun()
+    for group in NAV_GROUPS:
+        st.markdown(
+            f'<div class="sidebar-group-label">{group["label"]}</div>',
+            unsafe_allow_html=True,
+        )
+        for name, icon in group["pages"]:
+            is_active = st.session_state.nav == name
+            if st.button(
+                f"{icon}  {name}",
+                key=f"nav_{name}",
+                use_container_width=True,
+                type="primary" if is_active else "secondary",
+            ):
+                st.session_state.nav = name
+                st.rerun()
 
     st.markdown(
         "<hr style='border-color:rgba(255,255,255,0.06);margin:16px 0;'>",
@@ -176,11 +197,15 @@ with st.sidebar:
     )
 
 page = st.session_state.nav
+page_group = next(
+    (group["label"] for group in NAV_GROUPS if any(name == page for name, _ in group["pages"])),
+    "總覽",
+)
 
 st.markdown(
     f"""
     <div class="toolbar-shell">
-        <div class="toolbar-title">Global Controls</div>
+        <div class="toolbar-title">{page_group}</div>
         <div class="toolbar-heading">{page}</div>
         <div class="toolbar-copy">{PAGE_COPY.get(page, '')}</div>
     </div>
@@ -188,15 +213,12 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-toolbar_cols = st.columns([1.4, 1.0, 1.0, 0.65], gap="large")
+global_filter_state = render_global_filters(df)
+filtered_df, filtered_research_df = apply_global_filters(df, research_df, global_filter_state)
+_date_label = build_scope_label(global_filter_state)
+
+toolbar_cols = st.columns([1.0, 1.0, 0.7], gap="large")
 with toolbar_cols[0]:
-    selected_date = st.selectbox(
-        "分析日期",
-        ["全部日期"] + available_dates if available_dates else ["全部日期"],
-        label_visibility="visible",
-        key="date_filter",
-    )
-with toolbar_cols[1]:
     st.markdown(
         f"""
         <div class="toolbar-stat">
@@ -207,40 +229,24 @@ with toolbar_cols[1]:
         """,
         unsafe_allow_html=True,
     )
-with toolbar_cols[2]:
+with toolbar_cols[1]:
     st.markdown(
         f"""
         <div class="toolbar-stat">
-            <div class="label">資料規模</div>
-            <div class="value">{len(df):,} 筆</div>
-            <div class="meta">日期範圍 {available_dates[-1] if available_dates else '—'} 至 {available_dates[0] if available_dates else '—'}</div>
+            <div class="label">目前樣本</div>
+            <div class="value">{len(filtered_df):,} 筆</div>
+            <div class="meta">全資料共 {len(df):,} 筆</div>
         </div>
         """,
         unsafe_allow_html=True,
     )
-with toolbar_cols[3]:
+with toolbar_cols[2]:
     st.markdown("<div style='height: 1.6rem;'></div>", unsafe_allow_html=True)
     if st.button("↺ 重新整理", use_container_width=True, type="primary"):
         st.cache_data.clear()
-        df, research_df = load_data()
-        schedule_df = load_train_schedule()
         st.rerun()
 
-# ══════════════════════════════════════════════════════════════
-#  全域日期篩選
-# ══════════════════════════════════════════════════════════════
-if not df.empty and "Date" in df.columns and selected_date != "全部日期":
-    filtered_df = df[df["Date"] == selected_date].copy()
-    filtered_research_df = (
-        research_df[research_df["Date"] == selected_date].copy()
-        if not research_df.empty and "Date" in research_df.columns
-        else research_df.copy()
-    )
-    _date_label = f"📅 {selected_date}"
-else:
-    filtered_df          = df.copy()
-    filtered_research_df = research_df.copy()
-    _date_label          = "📅 全部日期"
+render_scope_summary(global_filter_state, filtered_df)
 
 # ══════════════════════════════════════════════════════════════
 #  頁面路由
@@ -269,17 +275,13 @@ elif page == "站點熱力圖":
         date_label=_date_label, processor=processor,
     )
 elif page == "車次追蹤":
-    page_train_tracker.render(df, schedule_df=schedule_df, processor=processor)
+    page_train_tracker.render(filtered_df, schedule_df=schedule_df, processor=processor)
 elif page == "OLS 迴歸":
     page_regression.render(
         df, filtered_research_df=filtered_research_df, date_label=_date_label,
     )
-elif page == "異常通報":
-    page_alerts.render(processor=processor)
-elif page == "爬蟲監控":
-    page_crawler_monitor.render(data_dir=DATA_DIR)
-elif page == "系統設定":
-    page_settings.render(
+elif page == "系統與資料狀態":
+    page_system_status.render(
         df=df, research_df=research_df, processor=processor,
         DATA_DIR=DATA_DIR, CLIENT_ID=CLIENT_ID, CLIENT_SECRET=CLIENT_SECRET,
         **_crawl_kwargs,

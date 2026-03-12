@@ -521,6 +521,21 @@ def render(df: pd.DataFrame, **kwargs):
     available_dates = sorted(df["Date"].astype(str).unique(), reverse=True) if not df.empty else []
     if today_str not in available_dates:
         available_dates = [today_str] + available_dates
+    if not available_dates:
+        st.warning("目前篩選範圍沒有可追蹤的車次資料。")
+        return
+
+    prefill_date = st.session_state.get("tracker_prefill_date")
+    if "tracker_date_v2" not in st.session_state:
+        if prefill_date in available_dates:
+            st.session_state["tracker_date_v2"] = prefill_date
+        elif available_dates:
+            st.session_state["tracker_date_v2"] = available_dates[0]
+    elif st.session_state["tracker_date_v2"] not in available_dates and available_dates:
+        st.session_state["tracker_date_v2"] = available_dates[0]
+
+    if "tracker_train_txt_v2" not in st.session_state and st.session_state.get("tracker_prefill_train_no"):
+        st.session_state["tracker_train_txt_v2"] = st.session_state["tracker_prefill_train_no"]
 
     col_a, col_b, col_c = st.columns([1.5, 1.6, 0.6], gap="large")
     with col_a:
@@ -529,6 +544,16 @@ def render(df: pd.DataFrame, **kwargs):
         is_today = str(sel_date) == today_str
         if not is_today and not df.empty:
             day_trains = sorted(df[df["Date"].astype(str) == str(sel_date)]["TrainNo"].astype(str).unique())
+            prefill_train = st.session_state.get("tracker_prefill_train_no")
+            if day_trains:
+                if "tracker_train_sel_v2" not in st.session_state:
+                    st.session_state["tracker_train_sel_v2"] = (
+                        prefill_train if prefill_train in day_trains else day_trains[0]
+                    )
+                elif st.session_state["tracker_train_sel_v2"] not in day_trains:
+                    st.session_state["tracker_train_sel_v2"] = (
+                        prefill_train if prefill_train in day_trains else day_trains[0]
+                    )
             train_input = st.selectbox("選擇車次", day_trains, key="tracker_train_sel_v2")
         else:
             train_input = st.text_input("輸入車次號碼", placeholder="例如：131", key="tracker_train_txt_v2")

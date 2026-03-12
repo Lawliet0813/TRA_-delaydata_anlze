@@ -811,6 +811,60 @@ div[data-testid="stAlert"] {{
     font-weight: 500;
 }}
 
+.sidebar-group-label {{
+    margin: 16px 0 8px 0;
+    color: {TEXT_MUTED};
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+}}
+
+.scope-strip {{
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 16px;
+    margin: 14px 0 18px 0;
+    padding: 14px 16px;
+    border: 1px solid {BORDER};
+    border-radius: 14px;
+    background: linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.018));
+}}
+
+.scope-strip .eyebrow {{
+    color: {TEXT_MUTED};
+    font-size: 0.68rem;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    margin-bottom: 4px;
+}}
+
+.scope-strip .headline {{
+    color: {TEXT_PRIMARY};
+    font-size: 0.92rem;
+    font-weight: 600;
+}}
+
+.scope-strip .pills {{
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    justify-content: flex-end;
+}}
+
+.scope-pill {{
+    display: inline-flex;
+    align-items: center;
+    padding: 6px 10px;
+    border-radius: 999px;
+    border: 1px solid rgba(75,163,255,0.18);
+    background: rgba(75,163,255,0.08);
+    color: {TEXT_PRIMARY};
+    font-size: 0.75rem;
+    white-space: nowrap;
+}}
+
 @media (max-width: 900px) {{
     .block-container {{
         padding-top: calc(4.25rem + env(safe-area-inset-top, 0px)) !important;
@@ -818,6 +872,15 @@ div[data-testid="stAlert"] {{
 
     .toolbar-shell {{
         padding: 16px 16px 12px 16px;
+    }}
+
+    .scope-strip {{
+        flex-direction: column;
+        align-items: flex-start;
+    }}
+
+    .scope-strip .pills {{
+        justify-content: flex-start;
     }}
 }}
 
