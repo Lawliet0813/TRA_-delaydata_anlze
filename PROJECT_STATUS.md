@@ -2,8 +2,8 @@
 
 > 最後更新：2026-03-03
 > 專案路徑：`tra_delay_crawler/`
-> Git Repo：https://github.com/Lawliet0813/TRA_-delaydata_anlze
-> Streamlit Cloud：https://tra-delaydataanlze-cwvejankcpdrlhgtsdsjbf.streamlit.app/
+> Git 儲存庫：https://github.com/Lawliet0813/TRA_-delaydata_anlze
+> Streamlit 雲端版：https://tra-delaydataanlze-cwvejankcpdrlhgtsdsjbf.streamlit.app/
 
 ---
 
@@ -29,13 +29,13 @@ TDX API
 data/station_live/YYYY-MM-DD/HHMMSS.json
   │ export_csv.py
   ▼
-data/processed_data.csv        ← Streamlit Cloud 主要讀取
+data/processed_data.csv        ← Streamlit 雲端版主要讀取
 data/research_dataset.csv      ← OLS 迴歸頁讀取
 data/stations_coords.csv       ← 地圖座標補充
 data/train_schedule.csv        ← 首末班時間查詢（新）
   │ raw.githubusercontent.com
   ▼
-Streamlit Cloud（儀表板）
+Streamlit 雲端版（儀表板）
 ```
 
 ### 主要模組完成度
@@ -109,7 +109,7 @@ Streamlit Cloud（儀表板）
 |---|------|------|
 | 4 | `train_schedule.csv` 尚未產生 | export_csv.py 已加入，等 Actions 跑後才會出現在 repo |
 | 5 | `station_structure.csv` 未填寫 | X7（SideTrackCount）、X8（IsDouble）需手動填入 237 站資料 |
-| 6 | Streamlit Cloud「系統設定」頁顯示目錄不存在 | 雲端無本機 data/ 目錄，需在雲端模式下改顯示提示而非報錯 |
+| 6 | Streamlit 雲端版「系統設定」頁顯示目錄不存在 | 雲端無本機 data/ 目錄，需在雲端模式下改顯示提示而非報錯 |
 
 ### 🟢 低優先
 
@@ -125,9 +125,9 @@ Streamlit Cloud（儀表板）
 | 頁面 | 狀態 | 功能 |
 |------|------|------|
 | ⬡ 首頁 | ✅ | 研究說明、系統狀態 |
-| ◈ 數據總覽 | ✅ | KPI、車種/時段/假日圖表、逐日趨勢 |
+| ◈ 資料總覽 | ✅ | KPI、車種/時段/假日圖表、逐日趨勢 |
 | ◎ 準點率分析 | ✅ | 台鐵官方口徑 vs 本研究全站口徑、首末班查詢 |
-| ◉ 站點熱力圖 | ✅ | 密度熱力圖 / 氣泡誤點圖 / 車站位置 |
+| ◉ 車站熱力圖 | ✅ | 密度熱力圖 / 氣泡誤點圖 / 車站位置 |
 | ≋ OLS 迴歸 | ✅ | OLS + Logit，係數圖 + statsmodels summary |
 | ⚠ 異常通報 | ✅ | Alert 資料列表 |
 | ⚙ 系統設定 | ⚠️ | 雲端模式下「目錄狀況」顯示錯誤（已知問題 #6） |

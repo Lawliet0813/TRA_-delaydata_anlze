@@ -28,7 +28,7 @@ tra_delay_crawler/
 ├── data/
 │   ├── static/
 │   │   └── station_structure.csv  # 場站結構靜態變數（X7, X8）
-│   └── processed_data.csv         # 處理後資料（供 Streamlit Cloud 讀取）
+│   └── processed_data.csv         # 處理後資料（供 Streamlit 雲端版讀取）
 └── .github/workflows/crawler.yml  # GitHub Actions 自動爬蟲排程
 ```
 
@@ -70,7 +70,22 @@ cp .env.example .env   # 填入 TDX 金鑰
 streamlit run app.py
 ```
 
+## 本機自動推送
+
+本儲存庫內建本機 `launchd` 腳本，可自動抓取資料，並將雲端儀表板讀取的 CSV 推送至 GitHub：
+
+```bash
+zsh scripts/install_launchd.sh
+```
+
+安裝後會建立三個排程：
+
+- `com.lawliet.tra.live`：每 10 分鐘抓 `StationLiveBoard`
+- `com.lawliet.tra.alert`：每小時整點執行 `export_csv.py`，並自動 push `data/*.csv`
+- `com.lawliet.tra.timetable`：每日 06:05 抓時刻表，並自動 push `data/timetable/daily_YYYY-MM-DD.json`
+
+自動 push 會使用獨立 clone `~/tra_git_push`，避免把你工作中的程式碼修改一併提交。
+
 ## 線上展示
 
-[Streamlit Cloud](https://tra-delaydataanlze-cwvejankcpdrlhgtsdsjbf.streamlit.app/)
-
+[Streamlit 雲端版](https://tra-delaydataanlze-cwvejankcpdrlhgtsdsjbf.streamlit.app/)

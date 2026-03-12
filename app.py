@@ -84,14 +84,14 @@ NAV_GROUPS = [
         "label": "總覽",
         "pages": [
             ("首頁", "⬡"),
-            ("數據總覽", "◈"),
+            ("資料總覽", "◈"),
         ],
     },
     {
         "label": "診斷",
         "pages": [
             ("準點率分析", "◎"),
-            ("站點熱力圖", "◉"),
+            ("車站熱力圖", "◉"),
             ("車次追蹤", "◷"),
             ("OLS 迴歸", "≋"),
         ],
@@ -105,9 +105,9 @@ NAV_GROUPS = [
 ]
 PAGE_COPY = {
     "首頁": "研究主畫面，先看整體趨勢、目前樣態與最值得追的異常。",
-    "數據總覽": "用描述統計拆解誤點的趨勢、比較與分布。",
+    "資料總覽": "用描述統計拆解誤點的趨勢、比較與分布。",
     "準點率分析": "比較官方口徑與研究口徑，檢查準點率落差出在哪裡。",
-    "站點熱力圖": "從車站與路網空間分布理解誤點集中的區段。",
+    "車站熱力圖": "從車站與路網空間分布理解誤點集中的區段。",
     "車次追蹤": "追單一車次的全程表現，確認延誤如何沿線累積。",
     "OLS 迴歸": "用可解釋的營運變數拆出風險與嚴重度的主要因素。",
     "系統與資料狀態": "把資料中心、異常通報與爬蟲監控整合在同一個維運入口。",
@@ -124,9 +124,9 @@ if CLOUD_MODE:
     if not df.empty:
         last_date = str(df["Date"].max())
         status_badge_cls = "badge-green" if last_date == today else "badge-yellow"
-        status_txt = f"CLOUD · {last_date}"
+        status_txt = f"雲端 · {last_date}"
         last_update_txt = f"最後資料日期 {last_date}"
-    data_source = "GitHub Actions"
+    data_source = "GitHub Actions 雲端排程"
 else:
     today_dir = os.path.join(DATA_DIR, "station_live", today)
     files_today = (
@@ -142,14 +142,14 @@ else:
             )
             mins = int((datetime.now() - last_dt).total_seconds() / 60)
             if mins <= 5:
-                status_badge_cls, status_txt = "badge-green", f"LIVE · {mins}min ago"
+                status_badge_cls, status_txt = "badge-green", f"即時 · {mins} 分鐘前"
             elif mins <= 15:
-                status_badge_cls, status_txt = "badge-yellow", f"SLOW · {mins}min ago"
+                status_badge_cls, status_txt = "badge-yellow", f"延遲 · {mins} 分鐘前"
             else:
-                status_badge_cls, status_txt = "badge-red", f"DEAD · {mins}min"
+                status_badge_cls, status_txt = "badge-red", f"中斷 · {mins} 分鐘"
             last_update_txt = f"最後更新 {last_dt.strftime('%H:%M:%S')}"
         except Exception:
-            status_badge_cls, status_txt = "badge-yellow", "UNKNOWN"
+            status_badge_cls, status_txt = "badge-yellow", "狀態不明"
     data_source = f"{len(files_today)} 次"
 
 with st.sidebar:
@@ -262,14 +262,14 @@ if not CLOUD_MODE:
 
 if page == "首頁":
     page_home.render(df, filtered_df=filtered_df, date_label=_date_label)
-elif page == "數據總覽":
+elif page == "資料總覽":
     page_overview.render(df, filtered_df=filtered_df, date_label=_date_label)
 elif page == "準點率分析":
     page_punctuality.render(
         df, filtered_df=filtered_df,
         date_label=_date_label, schedule_df=schedule_df,
     )
-elif page == "站點熱力圖":
+elif page == "車站熱力圖":
     page_heatmap.render(
         df, filtered_df=filtered_df,
         date_label=_date_label, processor=processor,

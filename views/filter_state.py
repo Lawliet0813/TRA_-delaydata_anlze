@@ -170,8 +170,8 @@ def render_scope_summary(state: dict[str, str], filtered_df: pd.DataFrame) -> No
         f"""
         <div class="scope-strip">
             <div>
-                <div class="eyebrow">Current Scope</div>
-                <div class="headline">{len(filtered_df):,} 筆觀測落在目前條件內</div>
+                <div class="eyebrow">目前分析範圍</div>
+                <div class="headline">目前條件下共有 {len(filtered_df):,} 筆觀測值</div>
             </div>
             <div class="pills">{''.join(pills)}</div>
         </div>

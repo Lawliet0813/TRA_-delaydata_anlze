@@ -349,7 +349,7 @@ def _build_journey_timeline_chart(detail_df: pd.DataFrame) -> go.Figure | None:
 
 def _render_live_view(train_no: str, today_str: str, schedule_df: pd.DataFrame | None) -> None:
     section_title(f"即時動態｜{train_no} 次｜{today_str}")
-    st.caption("資料來源：TDX TrainLiveBoard API。即時模式只顯示列車目前所在位置，非全程停靠紀錄。")
+    st.caption("資料來源：TDX TrainLiveBoard API。即時模式僅顯示列車當前位置，並非全程停靠紀錄。")
     with st.spinner("呼叫 TDX API 中…"):
         live_df = _fetch_train_live(train_no)
 
@@ -424,13 +424,13 @@ def _render_history_view(
         story_card(
             "最早出現研究誤點",
             summary["first_delay_station"],
-            f"從這一站開始延誤達 2 分鐘以上，後續站點就要觀察是否持續累積。",
+            f"從這一站開始延誤達 2 分鐘以上，後續車站就要觀察是否持續累積。",
             tone="yellow" if summary["research_delay_count"] else "green",
         )
         story_card(
             "延誤峰值",
             f"{summary['peak_station']} · {summary['peak_delay']:.0f} 分",
-            "這是整段旅程中延誤最嚴重的站點，可回頭對照路段或前站傳遞效應。",
+            "這是整段旅程中延誤最嚴重的車站，可回頭對照路段或前站傳遞效應。",
             tone="red" if summary["peak_delay"] >= 5 else "yellow",
         )
         story_card(

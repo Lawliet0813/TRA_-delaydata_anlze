@@ -1,5 +1,5 @@
 """
-站點熱力圖 (Heatmap) — Spatial analysis board
+車站熱力圖 — 空間風險分析頁
 """
 import pandas as pd
 import plotly.express as px
@@ -176,8 +176,8 @@ def _build_map(
             go.Scattermap(
                 lat=station_map["Lat"],
                 lon=station_map["Lon"],
-                mode="markers+text" if mode == "站點標記" else "markers",
-                text=station_map["StationName"] if mode == "站點標記" else None,
+                mode="markers+text" if mode == "車站標記" else "markers",
+                text=station_map["StationName"] if mode == "車站標記" else None,
                 textposition="top right",
                 textfont=dict(size=9, color="rgba(238,245,251,0.72)"),
                 marker=dict(
@@ -338,7 +338,7 @@ def _build_corridor_chart(map_df: pd.DataFrame) -> go.Figure | None:
 
 
 def render(df, filtered_df, date_label, processor=None, **kwargs):
-    page_header("◉", "站點熱力圖", "把車站誤點資料轉成可讀的空間風險地圖與站點排行")
+    page_header("◉", "車站熱力圖", "把車站誤點資料轉成可讀的空間風險地圖與車站排行")
     st.caption(f"目前顯示範圍：{date_label}")
 
     work_df = filtered_df.copy() if not filtered_df.empty else pd.DataFrame()
@@ -358,7 +358,7 @@ def render(df, filtered_df, date_label, processor=None, **kwargs):
         else:
             selected_periods = []
     with control_cols[2]:
-        map_mode = st.selectbox("地圖模式", ["氣泡分布", "熱區密度", "站點標記"], index=0, key="map_mode_v2")
+        map_mode = st.selectbox("地圖模式", ["氣泡分布", "熱區密度", "車站標記"], index=0, key="map_mode_v2")
     with control_cols[3]:
         view_metric = st.selectbox("著色指標", ["平均誤點（分）", "誤點率（%）", "最大誤點（分）"], index=0, key="map_metric_v2")
 
@@ -369,7 +369,7 @@ def render(df, filtered_df, date_label, processor=None, **kwargs):
     if selected_periods and "Period" in map_df.columns:
         map_df = map_df[map_df["Period"].isin(selected_periods)]
     if map_df.empty:
-        st.warning("篩選後沒有可用的站點資料。")
+        st.warning("篩選後沒有可用的車站資料。")
         return
 
     station_map = _aggregate_station_metrics(map_df)
@@ -388,7 +388,7 @@ def render(df, filtered_df, date_label, processor=None, **kwargs):
         )
         st.caption("優先看空間集中區，再用右側排行榜鎖定最值得追的車站。")
     with side_col:
-        section_title("空間觀察")
+        section_title("空間研判")
         story_card(
             "最高風險站",
             str(worst_station["StationName"]),
@@ -396,9 +396,9 @@ def render(df, filtered_df, date_label, processor=None, **kwargs):
             tone="red",
         )
         story_card(
-            "中位站點",
+            "中位數車站",
             str(median_station["StationName"]),
-            f"這類站點更接近全體常態，平均誤點約 {median_station['平均誤點']} 分。",
+            f"這類車站更接近全體常態，平均誤點約 {median_station['平均誤點']} 分。",
             tone="blue",
         )
         story_card(
@@ -444,7 +444,7 @@ def render(df, filtered_df, date_label, processor=None, **kwargs):
             hide_index=True,
         )
     with lower_right:
-        section_title("站點分布")
+        section_title("車站分布")
         st.plotly_chart(_build_station_distribution(station_map), use_container_width=True)
         corridor_fig = _build_corridor_chart(map_df)
         if corridor_fig is not None:
@@ -452,5 +452,5 @@ def render(df, filtered_df, date_label, processor=None, **kwargs):
             st.plotly_chart(corridor_fig, use_container_width=True)
         note_card(
             "讀圖方式",
-            "地圖負責找空間聚集，排行負責找具體站點，路線摘要則回答問題是否集中在特定線別或方向。",
+            "地圖用來找空間聚集，排行用來找具體車站，路線摘要則協助判斷問題是否集中在特定線別或行車方向。",
         )

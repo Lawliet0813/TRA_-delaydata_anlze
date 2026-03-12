@@ -1,5 +1,5 @@
 """
-異常通報 (Alerts) — Timeline + Categorized Analysis
+異常通報 — 類別與事件分析
 """
 import streamlit as st
 import pandas as pd
@@ -9,7 +9,7 @@ from views.components import page_header, section_title
 
 
 def render(processor, **kwargs):
-    page_header("⚠", "異常通報分析", "誤點原因分類統計 · Alert Analysis")
+    page_header("⚠", "異常通報分析", "誤點原因分類統計與近期事件彙整")
 
     alerts_df = processor.parse_alerts()
 

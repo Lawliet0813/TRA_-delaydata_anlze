@@ -1,5 +1,5 @@
 """
-首頁 (Home) — Research dashboard landing page
+首頁 — 研究儀表板首頁
 """
 import pandas as pd
 import streamlit as st
@@ -192,9 +192,9 @@ def render(df, filtered_df=None, date_label="📅 全部日期", **kwargs):
     st.markdown(
         """
         <div class="hero">
-            <div class="kicker">Rail Operations Research Board</div>
+            <div class="kicker">鐵道營運研究儀表板</div>
             <h1>台鐵列車誤點影響因素之量化分析</h1>
-            <div class="subtitle">把全台列車停靠紀錄轉成可讀的營運趨勢、站點差異與研究線索</div>
+            <div class="subtitle">把全臺列車停靠紀錄轉成可讀的營運趨勢、車站差異與研究線索</div>
             <div class="institution">政治大學 MEPA · 社會科學研究方法（一）期末報告</div>
         </div>
         """,
@@ -274,7 +274,7 @@ def render(df, filtered_df=None, date_label="📅 全部日期", **kwargs):
             tone="red" if worst_type_delay >= 4 else "yellow",
         )
         story_card(
-            "最弱時段",
+            "準點率最低時段",
             weakest_period,
             f"該時段準點率約 {weakest_period_pct:.1f}%，值得優先交叉檢查路段與車種。",
             tone="yellow" if weakest_period_pct < 90 else "green",
@@ -287,13 +287,13 @@ def render(df, filtered_df=None, date_label="📅 全部日期", **kwargs):
                     filters={"train_type": worst_type} if worst_type != "—" else None,
                 )
         with action_cols[1]:
-            if st.button("看最弱時段", key="home_go_period", use_container_width=True):
+            if st.button("看低準點時段", key="home_go_period", use_container_width=True):
                 goto_page(
                     "準點率分析",
                     filters={"period": weakest_period} if weakest_period != "—" else None,
                 )
         if focus_train_no and st.button(
-            f"追最大延誤班次 {focus_train_no}",
+            f"追蹤最大延誤車次 {focus_train_no}",
             key="home_go_tracker",
             use_container_width=True,
             type="primary",
@@ -304,7 +304,7 @@ def render(df, filtered_df=None, date_label="📅 全部日期", **kwargs):
                 tracker_train_no=focus_train_no,
             )
         st.caption(
-            f"目前最大單筆延誤為 {focus_train_delay:.1f} 分，點上方可直接切去班次追蹤。"
+            f"目前最大單筆延誤為 {focus_train_delay:.1f} 分，點上方可直接切換至車次追蹤。"
             if focus_train_no else
             "目前範圍缺少可直接追蹤的班次資訊。"
         )
@@ -326,8 +326,8 @@ def render(df, filtered_df=None, date_label="📅 全部日期", **kwargs):
             "讀圖方式",
             "首頁只保留最先要回答的問題：最近整體是否變差、哪個車種最不穩、哪個時段最容易出現延誤。",
         )
-        if st.button("改看站點空間分布", key="home_go_heatmap", use_container_width=True):
-            goto_page("站點熱力圖")
+        if st.button("改看車站空間分布", key="home_go_heatmap", use_container_width=True):
+            goto_page("車站熱力圖")
 
     lower_left, lower_right = st.columns([1.15, 0.85], gap="large")
     with lower_left:
@@ -337,7 +337,7 @@ def render(df, filtered_df=None, date_label="📅 全部日期", **kwargs):
             <div class="compact-list">
                 <div class="compact-item">
                     <div class="term">Y1</div>
-                    <div class="desc">DelayTime：每班車在每個停靠站的實際誤點分鐘數。</div>
+                    <div class="desc">DelayTime：每一筆車次停靠紀錄的實際誤點分鐘數。</div>
                 </div>
                 <div class="compact-item">
                     <div class="term">Y2</div>
@@ -355,17 +355,17 @@ def render(df, filtered_df=None, date_label="📅 全部日期", **kwargs):
         section_title("分析模組")
         st.markdown(
             method_step("01", "描述統計", "先看趨勢、比較與分布，確認延誤的基本輪廓。")
-            + method_step("02", "空間檢視", "用站點熱力與路網圖找出誤點集中區。")
+            + method_step("02", "空間檢視", "用車站熱力圖與路網圖找出誤點集中區。")
             + method_step("03", "模型解釋", "把延誤風險與嚴重度拆開估計，避免混讀。"),
             unsafe_allow_html=True,
         )
         module_cols = st.columns(3)
         with module_cols[0]:
             if st.button("看總覽", key="home_go_overview", use_container_width=True):
-                goto_page("數據總覽")
+                goto_page("資料總覽")
         with module_cols[1]:
-            if st.button("看熱力圖", key="home_go_heatmap2", use_container_width=True):
-                goto_page("站點熱力圖")
+            if st.button("看車站熱力圖", key="home_go_heatmap2", use_container_width=True):
+                goto_page("車站熱力圖")
         with module_cols[2]:
             if st.button("跑模型", key="home_go_reg", use_container_width=True):
                 goto_page("OLS 迴歸")

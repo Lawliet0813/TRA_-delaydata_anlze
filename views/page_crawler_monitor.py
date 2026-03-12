@@ -1,5 +1,5 @@
 """
-爬蟲監控儀表板 — 本地 launchd 狀態 · 採集統計 · Log 查閱 · 模式比較
+爬蟲監控儀表板 — 本機 launchd 狀態、採集統計、執行日誌與模式比較
 """
 import streamlit as st
 import os
@@ -23,7 +23,7 @@ LOG_DIR = os.path.join(HOME, "Library", "Logs")
 AGENTS = [
     {
         "label": "com.lawliet.tra.live",
-        "name": "即時板 Live",
+        "name": "即時板",
         "icon": "◉",
         "log": os.path.join(LOG_DIR, "tra_live_local.log"),
         "schedule": "每 10 分鐘",
@@ -31,7 +31,7 @@ AGENTS = [
     },
     {
         "label": "com.lawliet.tra.alert",
-        "name": "整點 Alert + CSV",
+        "name": "整點通報與 CSV",
         "icon": "◈",
         "log": os.path.join(LOG_DIR, "tra_hourly_local.log"),
         "schedule": "每小時整點",
@@ -39,7 +39,7 @@ AGENTS = [
     },
     {
         "label": "com.lawliet.tra.timetable",
-        "name": "時刻表 Timetable",
+        "name": "時刻表",
         "icon": "◷",
         "log": os.path.join(LOG_DIR, "tra_timetable_local.log"),
         "schedule": "每日 06:05",
@@ -162,11 +162,11 @@ def hourly_collection_chart(data_dir: str) -> go.Figure:
 # ── Render ─────────────────────────────────────────────────────────────────
 
 def render(data_dir: str):
-    page_header("◆", "爬蟲監控儀表板", "launchd 排程狀態 · 採集統計 · Log 記錄 · 模式比較")
+    page_header("◆", "爬蟲監控儀表板", "launchd 排程狀態、採集統計、執行日誌與模式比較")
 
     if CLOUD_MODE:
         st.info("雲端模式下此頁面不可用。資料由 GitHub Actions 負責採集，"
-                "請至 GitHub repo 的 Actions 頁面查看執行記錄。")
+                "請至 GitHub 儲存庫的 Actions 頁面查看執行紀錄。")
         return
 
     # ══ 自動重新整理 ════════════════════════════════════════════════════════
@@ -246,7 +246,7 @@ def render(data_dir: str):
         kpi_card("即時板 JSON 今日", str(live_today), color, "station_live 檔案數")
     with stat_cols[1]:
         color = "green" if alert_today > 0 else "yellow"
-        kpi_card("Alert 今日", str(alert_today), color, "alerts 檔案數")
+        kpi_card("通報資料今日", str(alert_today), color, "alerts 檔案數")
     with stat_cols[2]:
         kpi_card("今日資料量", f"{size_mb:.1f} MB", "blue", "station_live JSON")
     with stat_cols[3]:
@@ -262,10 +262,10 @@ def render(data_dir: str):
 
     # ══ Section 3：Log 查閱 ════════════════════════════════════════════════
     st.markdown("<div style='margin-top:8px;'></div>", unsafe_allow_html=True)
-    section_title("LOG 最新記錄")
+    section_title("最新執行日誌")
 
     tab_live, tab_hourly, tab_timetable = st.tabs([
-        "◉  即時板 Live", "◈  整點 Alert+CSV", "◷  時刻表 Timetable"
+        "◉  即時板", "◈  整點通報與 CSV", "◷  時刻表"
     ])
 
     for tab, agent in zip([tab_live, tab_hourly, tab_timetable], AGENTS):
@@ -305,18 +305,18 @@ def render(data_dir: str):
 
     # ══ Section 4：GitHub Actions vs 本地比較 ══════════════════════════════
     st.markdown("<div style='margin-top:24px;'></div>", unsafe_allow_html=True)
-    section_title("GITHUB ACTIONS vs 本地 LAUNCHD 比較")
+    section_title("GitHub Actions 與本機 launchd 比較")
 
     rows = [
-        ("排程方式",        "Cron on GitHub servers",    "launchd StartInterval / StartCalendarInterval"),
-        ("可用性",          "24/7（不需開機）",           "需 Mac 開機 & 不休眠"),
+        ("排程方式",        "GitHub 伺服器排程（cron）",  "launchd StartInterval / StartCalendarInterval"),
+        ("可用性",          "全天候執行（不需開機）",      "需 Mac 開機且不可休眠"),
         ("憑證管理",        "GitHub Secrets（加密）",    ".env 明文（存本機）"),
         ("Python 版本",    "3.11（Ubuntu）",             "3.14（本機 venv）"),
-        ("Raw JSON 推送",  "✅ Force push（耗 repo 空間）", "❌ 留本機，節省空間"),
-        ("CSV 推送機制",   "同 repo 直接 commit",        "複製到 ~/tra_git_push 再 push"),
+        ("Raw JSON 推送",  "✅ Force push（占用儲存庫空間）", "❌ 保留本機，節省空間"),
+        ("CSV 推送機制",   "同一儲存庫直接 commit",        "複製到 ~/tra_git_push 後再 push"),
         ("並發衝突處理",   "concurrency group 保護",     "單一 process，無衝突"),
-        ("執行日誌",       "GitHub Actions UI（90天）",  "~/Library/Logs/tra_*.log"),
-        ("失敗通知",       "Email 自動通知",              "需手動看 log"),
+        ("執行日誌",       "GitHub Actions 介面（90 天）",  "~/Library/Logs/tra_*.log"),
+        ("失敗通知",       "電子郵件自動通知",              "需手動查看日誌"),
         ("執行成本",       "消耗 Actions 免費額度",       "本機電力"),
         ("當前狀態",       "⏸ 已暫停（workflow_dispatch）", "▶ 運行中（launchd loaded）"),
     ]
@@ -360,7 +360,7 @@ def render(data_dir: str):
     section_title("手動觸發")
     btn_c1, btn_c2, btn_c3, _ = st.columns([1, 1, 1, 2])
     with btn_c1:
-        if st.button("▶ 立即抓取 Live", use_container_width=True):
+        if st.button("▶ 立即抓取即時板", use_container_width=True):
             with st.spinner("執行中..."):
                 r = subprocess.run(
                     ["/bin/zsh", os.path.join(data_dir, "..", "scripts", "tra_live.sh")],
@@ -371,7 +371,7 @@ def render(data_dir: str):
             else:
                 st.error(f"失敗：{r.stderr[:200]}")
     with btn_c2:
-        if st.button("▶ 立即執行 Hourly", use_container_width=True):
+        if st.button("▶ 立即執行整點流程", use_container_width=True):
             with st.spinner("執行中（約 10 秒）..."):
                 r = subprocess.run(
                     ["/bin/zsh", os.path.join(data_dir, "..", "scripts", "tra_hourly.sh")],

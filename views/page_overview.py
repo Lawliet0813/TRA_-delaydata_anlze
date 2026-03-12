@@ -1,5 +1,5 @@
 """
-數據總覽 (Data Overview) — Trends, comparisons, and distributions
+資料總覽 — 趨勢、比較與分布
 """
 import pandas as pd
 import streamlit as st
@@ -186,7 +186,7 @@ def _build_punctuality_gap(df: pd.DataFrame) -> go.Figure | None:
 
 
 def render(df, filtered_df, date_label, **kwargs):
-    page_header("◈", "數據總覽", "把資料拆成趨勢、比較與分布三個閱讀層次")
+    page_header("◈", "資料總覽", "把資料拆成趨勢、比較與分布三個閱讀層次")
 
     if filtered_df.empty:
         st.warning("此日期無資料，請重新選擇。")
@@ -249,8 +249,8 @@ def render(df, filtered_df, date_label, **kwargs):
         fig = _build_delay_distribution(scope_df)
         if fig is not None:
             st.plotly_chart(fig, use_container_width=True)
-        if st.button("改看站點熱力與空間分布", key="overview_go_heatmap", use_container_width=True):
-            goto_page("站點熱力圖")
+        if st.button("改看車站熱力與空間分布", key="overview_go_heatmap", use_container_width=True):
+            goto_page("車站熱力圖")
         note_card(
             "分布判讀",
             "這張圖看的是尾端風險，而不是平均表現。P90、P95 越高，代表少數極端延誤越常把整體拉壞。",
@@ -260,7 +260,7 @@ def render(df, filtered_df, date_label, **kwargs):
         fig = _build_punctuality_gap(scope_df)
         if fig is not None:
             st.plotly_chart(fig, use_container_width=True)
-            st.caption("每條線代表同一車種的兩種準點率定義。右側越遠，表示官方口徑越寬鬆。")
+            st.caption("每條線代表同一車種在兩種準點率定義下的差異。右側越遠，表示官方口徑越寬鬆。")
             if st.button("切到準點率診斷頁細看", key="overview_go_gap", use_container_width=True):
                 goto_page("準點率分析")
         else:
@@ -268,11 +268,11 @@ def render(df, filtered_df, date_label, **kwargs):
 
     action_cols = st.columns(3)
     with action_cols[0]:
-        if st.button("追單一班次", key="overview_go_tracker", use_container_width=True):
+        if st.button("追蹤單一車次", key="overview_go_tracker", use_container_width=True):
             goto_page("車次追蹤")
     with action_cols[1]:
-        if st.button("看空間熱點", key="overview_go_heatmap_footer", use_container_width=True):
-            goto_page("站點熱力圖")
+        if st.button("看車站熱點", key="overview_go_heatmap_footer", use_container_width=True):
+            goto_page("車站熱力圖")
     with action_cols[2]:
         if st.button("跑模型解釋", key="overview_go_reg", use_container_width=True):
             goto_page("OLS 迴歸")
