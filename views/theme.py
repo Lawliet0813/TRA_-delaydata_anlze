@@ -60,7 +60,7 @@ html, body, .stApp, .stMarkdown, p {{
 }}
 
 .block-container {{
-    padding-top: 1.3rem !important;
+    padding-top: calc(3.35rem + env(safe-area-inset-top, 0px)) !important;
     padding-bottom: 2rem !important;
 }}
 
@@ -297,6 +297,8 @@ div[data-testid="stAlert"] {{
     -webkit-text-fill-color: transparent;
     background-clip: text;
     margin-bottom: 4px !important;
+    line-height: 1.18 !important;
+    padding-top: 2px;
 }}
 .page-header .subtitle {{
     color: {TEXT_SECONDARY};
@@ -375,6 +377,8 @@ div[data-testid="stAlert"] {{
     -webkit-background-clip: text !important;
     -webkit-text-fill-color: transparent !important;
     margin-bottom: 8px !important;
+    line-height: 1.12 !important;
+    padding-top: 2px;
 }}
 
 .hero .subtitle {{
@@ -517,6 +521,7 @@ div[data-testid="stAlert"] {{
     border: 1px solid {BORDER};
     border-radius: 18px;
     padding: 18px 22px 12px 22px;
+    margin-top: 0.2rem;
     margin-bottom: 24px;
 }}
 
@@ -534,6 +539,7 @@ div[data-testid="stAlert"] {{
     font-size: 1.18rem;
     font-weight: 600;
     margin-bottom: 4px;
+    line-height: 1.2;
 }}
 
 .toolbar-copy {{
@@ -803,6 +809,16 @@ div[data-testid="stAlert"] {{
 .storage-bar .val {{
     color: {TEXT_PRIMARY};
     font-weight: 500;
+}}
+
+@media (max-width: 900px) {{
+    .block-container {{
+        padding-top: calc(4.25rem + env(safe-area-inset-top, 0px)) !important;
+    }}
+
+    .toolbar-shell {{
+        padding: 16px 16px 12px 16px;
+    }}
 }}
 
 </style>
