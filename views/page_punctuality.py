@@ -59,7 +59,7 @@ def _build_type_dumbbell(compare: pd.DataFrame) -> go.Figure | None:
             y=compare["TrainType"],
             mode="markers",
             marker=dict(size=11, color=BLUE, line=dict(width=1.5, color="#07111a")),
-            name="研究口徑",
+            name="研究判定標準",
             hovertemplate="<b>%{y}</b><br>研究準點率 %{x:.1f}%<extra></extra>",
         )
     )
@@ -72,7 +72,7 @@ def _build_type_dumbbell(compare: pd.DataFrame) -> go.Figure | None:
             text=compare["差距"].map(lambda v: f"{v:+.1f}pt"),
             textposition="middle right",
             textfont=dict(size=10, color=TEXT_SECONDARY),
-            name="官方口徑",
+            name="官方判定標準",
             hovertemplate="<b>%{y}</b><br>官方準點率 %{x:.1f}%<extra></extra>",
         )
     )
@@ -103,7 +103,7 @@ def _build_period_profile(full_df: pd.DataFrame, terminal_df: pd.DataFrame) -> g
         go.Bar(
             x=research["Period"],
             y=research["研究準點率"],
-            name="研究口徑",
+            name="研究判定標準",
             marker=dict(color="rgba(75,163,255,0.35)", line=dict(width=0)),
             hovertemplate="<b>%{x}</b><br>研究準點率 %{y:.1f}%<extra></extra>",
         )
@@ -121,7 +121,7 @@ def _build_period_profile(full_df: pd.DataFrame, terminal_df: pd.DataFrame) -> g
             go.Scatter(
                 x=official["Period"],
                 y=official["官方準點率"],
-                name="官方口徑",
+                name="官方判定標準",
                 mode="lines+markers+text",
                 line=dict(color=GREEN, width=2.6),
                 marker=dict(size=9, color=GREEN),
@@ -267,7 +267,7 @@ def _render_schedule_lookup(schedule_df: pd.DataFrame) -> None:
 
 
 def render(df, filtered_df, date_label, schedule_df=None, **kwargs):
-    page_header("◎", "準點率分析", "把官方口徑與研究口徑拆開比較，直接看到差距出在哪裡")
+    page_header("◎", "準點率分析", "把官方判定標準與研究判定標準拆開比較，直接看到差距出在哪裡")
 
     scope_df = filtered_df.copy()
     st.caption(f"目前顯示範圍：{date_label}　共 {len(scope_df):,} 筆觀測")
@@ -306,10 +306,10 @@ def render(df, filtered_df, date_label, schedule_df=None, **kwargs):
         )
     with c3:
         kpi_card(
-            "口徑差距",
+            "標準差距",
             f"{gap_pct:+.2f}pt" if gap_pct is not None else "—",
             "blue" if gap_pct is not None else "",
-            "正值代表官方口徑較寬鬆",
+            "正值代表官方判定標準較寬鬆",
         )
 
     top_left, top_right = st.columns([1.45, 1.0], gap="large")
@@ -319,25 +319,25 @@ def render(df, filtered_df, date_label, schedule_df=None, **kwargs):
         if fig is not None:
             st.plotly_chart(fig, use_container_width=True)
         else:
-            st.info("目前終點站樣本不足，無法比較各車種的官方與研究口徑差距。")
+            st.info("目前終點站樣本不足，無法比較各車種的官方與研究判定標準差距。")
     with top_right:
         section_title("本次觀察")
         story_card(
-            "最大口徑落差",
+            "最大標準差距",
             max_gap_train,
             f"該車種官方與研究準點率相差約 {max_gap_value:+.1f} 個百分點。" if type_gap_df.shape[0] else "目前樣本不足，無法穩定估計各車種差距。",
             tone="yellow" if max_gap_value < 5 else "red",
         )
         story_card(
             "整體判讀",
-            "終點站較寬鬆" if gap_pct is not None and gap_pct > 0 else "兩口徑接近",
-            "官方口徑只看終點站，研究口徑則把途中停靠的旅客體感延誤也算進來。",
+            "終點站較寬鬆" if gap_pct is not None and gap_pct > 0 else "兩種標準接近",
+            "官方判定標準只看終點站，研究判定標準則把途中停靠的旅客體感延誤也算進來。",
             tone="blue",
         )
         story_card(
             "研究用途",
             "差距可解釋",
-            "這頁不是要證明誰對誰錯，而是把不同統計口徑造成的視角差異講清楚。",
+            "這頁不是要證明誰對誰錯，而是把不同統計定義造成的視角差異講清楚。",
             tone="green",
         )
 
@@ -363,7 +363,7 @@ def render(df, filtered_df, date_label, schedule_df=None, **kwargs):
     heatmap_fig = _build_cross_heatmap(scope_df)
     if heatmap_fig is not None:
         st.plotly_chart(heatmap_fig, use_container_width=True)
-        st.caption("這張圖固定看研究口徑，適合找出哪種車種在特定時段特別脆弱。")
+        st.caption("這張圖固定看研究判定標準，適合找出哪種車種在特定時段特別脆弱。")
     else:
         st.info("目前資料不足，無法建立交叉熱圖。")
 

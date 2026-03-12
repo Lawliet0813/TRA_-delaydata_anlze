@@ -49,7 +49,7 @@ Streamlit 雲端版（儀表板）
 | 異常通報 | `crawlers/alert.py` | ✅ | Alert，每 60 分鐘 |
 | 資料處理 | `processor.py` | ⚠️ | IsTerminal / StopSeq join 待驗證（見已知問題） |
 | 匯出腳本 | `export_csv.py` | ✅ | 新增 train_schedule.csv 輸出 |
-| 儀表板 | `app.py` | ✅ | 雙口徑準點率 + 日期篩選 + 圖表說明 |
+| 儀表板 | `app.py` | ✅ | 雙判定標準準點率 + 日期篩選 + 圖表說明 |
 
 ---
 
@@ -59,8 +59,8 @@ Streamlit 雲端版（儀表板）
 
 | 變數 | 欄位 | 狀態 | 說明 |
 |------|------|------|------|
-| Y1 | `IsDelayed` | ✅ | DelayTime ≥ 2 分鐘（本研究全站口徑） |
-| Y1b | `IsDelayed_Official` | ✅ | DelayTime ≥ 5 分鐘（台鐵官方口徑，僅終點站） |
+| Y1 | `IsDelayed` | ✅ | DelayTime ≥ 2 分鐘（本研究全站判定標準） |
+| Y1b | `IsDelayed_Official` | ✅ | DelayTime ≥ 5 分鐘（台鐵官方判定標準，僅終點站） |
 | Y2 | `DelayTime` | ✅ | TDX 直接回傳，單位：分鐘 |
 
 ### 自變數
@@ -126,7 +126,7 @@ Streamlit 雲端版（儀表板）
 |------|------|------|
 | ⬡ 首頁 | ✅ | 研究說明、系統狀態 |
 | ◈ 資料總覽 | ✅ | KPI、車種/時段/假日圖表、逐日趨勢 |
-| ◎ 準點率分析 | ✅ | 台鐵官方口徑 vs 本研究全站口徑、首末班查詢 |
+| ◎ 準點率分析 | ✅ | 台鐵官方判定標準 vs 本研究全站判定標準、首末班查詢 |
 | ◉ 車站熱力圖 | ✅ | 密度熱力圖 / 氣泡誤點圖 / 車站位置 |
 | ≋ OLS 迴歸 | ✅ | OLS + Logit，係數圖 + statsmodels summary |
 | ⚠ 異常通報 | ✅ | Alert 資料列表 |

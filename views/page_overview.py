@@ -256,15 +256,15 @@ def render(df, filtered_df, date_label, **kwargs):
             "這張圖看的是尾端風險，而不是平均表現。P90、P95 越高，代表少數極端延誤越常把整體拉壞。",
         )
     with bottom_right:
-        section_title("口徑落差：官方 vs 研究")
+        section_title("判定標準差異：官方 vs 研究")
         fig = _build_punctuality_gap(scope_df)
         if fig is not None:
             st.plotly_chart(fig, use_container_width=True)
-            st.caption("每條線代表同一車種在兩種準點率定義下的差異。右側越遠，表示官方口徑越寬鬆。")
+            st.caption("每條線代表同一車種在兩種準點率定義下的差異。右側越遠，表示官方判定標準越寬鬆。")
             if st.button("切到準點率診斷頁細看", key="overview_go_gap", use_container_width=True):
                 goto_page("準點率分析")
         else:
-            st.info("目前缺少足夠的終點站資料，暫時無法計算官方與研究口徑差距。")
+            st.info("目前缺少足夠的終點站資料，暫時無法計算官方與研究判定標準的差距。")
 
     action_cols = st.columns(3)
     with action_cols[0]:

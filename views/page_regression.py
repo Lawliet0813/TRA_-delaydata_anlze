@@ -163,7 +163,7 @@ def render(df, filtered_research_df, date_label, **kwargs):
         因此這頁改成兩段式模型，而不是單純用一個 OLS 硬估所有觀測值。
 
         **應變數（Y）**  
-        - **風險模型（Logit）**：`IsDelayed`，官方口徑 `DelayTime >= 5`
+        - **風險模型（Logit）**：`IsDelayed`，官方判定標準為 `DelayTime >= 5`
         - **嚴重度模型（Gamma GLM, log link）**：`DelayTime`，但只在 `IsDelayed = 1` 的樣本上估計
 
         **模型形式**  
@@ -218,7 +218,7 @@ def render(df, filtered_research_df, date_label, **kwargs):
         section_title("變數設定")
         st.markdown(f"""
         <div style="font-size:0.85rem; color:{TEXT_SECONDARY}; line-height:1.8;">
-        風險模型：<code>IsDelayed</code>（官方 5 分鐘口徑）<br>
+        風險模型：<code>IsDelayed</code>（官方 5 分鐘判定標準）<br>
         嚴重度模型：<code>DelayTime</code>（僅在已誤點樣本上估計）<br>
         自變數：車種、站序、時段、假日、前站誤點、方向、線別、站體規模、混合度、速差、終點站
         </div>
