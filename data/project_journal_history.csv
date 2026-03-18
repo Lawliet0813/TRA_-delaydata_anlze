@@ -1,0 +1,3 @@
+﻿date,generated_at,branch,head_sha,station_live_files,station_live_records,station_live_first,station_live_last,alerts_files,alerts_records,timetable_exists,timetable_trains,timetable_total_stops,processed_rows,processed_unique_trains,observed_rows,stop_plan_rows,avg_coverage_rate,commit_count,worktree_dirty
+2026-03-12,2026-03-12 23:19:29,main,c7b7112,103,15127,060619,230714,18,18,1,893,20727,19747,762,9857,20727,0.4992,6,1
+2026-03-18,2026-03-18 18:00:24,main,c7b7112,704,102681,060027,175953,14,14,1,894,20729,16459,617,13800,20729,0.5895,0,1
