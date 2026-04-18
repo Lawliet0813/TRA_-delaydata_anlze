@@ -16,7 +16,7 @@ def render(ctx: dict) -> None:
     with cols[1]:
         st.markdown(var_tag("X<sub>1</sub>", "年（2022–2026）"), unsafe_allow_html=True)
         st.markdown(var_tag("X<sub>2</sub>", "春節節點（6 類）"), unsafe_allow_html=True)
-        st.markdown(var_tag("X<sub>3</sub>", "車種（自強 / 莒光 / 區間…）"), unsafe_allow_html=True)
+        st.markdown(var_tag("X<sub>3</sub>", "車種（自強 / 莒光 / 區間 / 貨物）"), unsafe_allow_html=True)
         st.markdown(var_tag("X<sub>4</sub>", "路線區段（7 類）"), unsafe_allow_html=True)
 
     section_title("春節節點切分規則")
@@ -59,6 +59,13 @@ def render(ctx: dict) -> None:
         "臺鐵即時延誤 API 在列車進入終點站後停止更新，最晚觀測通常為倒數 1–2 站。"
         "倒數 1–2 站至終點站車程多為 5–10 分鐘，列車已無顯著加減速空間，延誤狀態大致等同終點到站延誤，"
         "因此以『最後觀測站延誤』作為官方口徑 proxy。",
+    )
+    note_card(
+        "貨物列車為何獨立一類",
+        "7 字頭車次為臺鐵貨物列車，最高運轉速度上限 60 km/h，遠低於旅客列車；"
+        "在尖峰班距下易被優先讓線，運作模式與旅客列車本質不同。"
+        "本研究保留其觀測於資料集中以利比較，但在車種欄位獨立歸類為「貨物列車」，"
+        "供『旅客 vs 貨物』的對照分析；實務解讀旅客誤點時，建議透過全域篩選器排除此類別。",
     )
     note_card(
         "為何採雙指標",
