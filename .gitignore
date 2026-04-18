@@ -17,6 +17,9 @@ data/static/stations.json
 data/research_dataset.csv
 # processed_data.csv 納入版控（供 Streamlit Cloud 讀取）
 
+# 春節原始 CSV（290MB，僅本機保留；雲端改讀 parquet）
+data/cny/cny_*.csv
+
 # macOS
 .DS_Store
 **/.DS_Store

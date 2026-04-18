@@ -1,17 +1,15 @@
-import streamlit as st
-import pandas as pd
+"""
+春節臺鐵誤點研究 — Streamlit 主程式
+
+資料來源為 2022–2026 年春節期間歷史誤點資料（交通部公開資料），
+分析結果來自 `data/cny/` 下的 parquet / csv / json，對應昨天跑完的
+`RAWdata/analysis/` 輸出。
+"""
 import os
-import glob
-from datetime import datetime
-from config import CLIENT_ID, CLIENT_SECRET, DATA_DIR
-from processor import DataProcessor, CLOUD_MODE
 
-if not CLOUD_MODE:
-    from crawlers.station_live import crawl_station_live
-    from crawlers.alert import crawl_alerts
-    from crawlers.daily_timetable import crawl_daily_timetable
-    from crawlers.station import crawl_stations
+import streamlit as st
 
+from cny_processor import CNYDataStore
 from views.theme import CSS, TEXT_MUTED
 from views.components import sidebar_brand, sidebar_stats
 from views.filter_state import (
@@ -23,135 +21,132 @@ from views.filter_state import (
 
 import views.page_home as page_home
 import views.page_overview as page_overview
-import views.page_punctuality as page_punctuality
+import views.page_cny_trend as page_cny_trend
+import views.page_cny_period as page_cny_period
+import views.page_threshold as page_threshold
 import views.page_heatmap as page_heatmap
-import views.page_regression as page_regression
-import views.page_train_tracker as page_train_tracker
-import views.page_system_status as page_system_status
+import views.page_anova_chi2 as page_anova_chi2
+import views.page_tukey as page_tukey
+import views.page_paired as page_paired
+import views.page_logistic as page_logistic
+import views.page_method as page_method
+import views.page_raw_preview as page_raw_preview
+
 
 # ══════════════════════════════════════════════════════════════
 #  頁面設定 & 主題
 # ══════════════════════════════════════════════════════════════
 st.set_page_config(
-    page_title="TRA 誤點研究指揮中心",
+    page_title="春節臺鐵誤點研究",
     layout="wide",
-    page_icon="🚆",
+    page_icon="🧧",
     initial_sidebar_state="expanded",
 )
 st.markdown(CSS, unsafe_allow_html=True)
 
-# ══════════════════════════════════════════════════════════════
-#  資料載入
-# ══════════════════════════════════════════════════════════════
-processor = DataProcessor(DATA_DIR)
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+CNY_DIR = os.path.join(BASE_DIR, "data", "cny")
+STATIONS_COORDS_PATH = os.path.join(BASE_DIR, "data", "stations_coords.csv")
+
+store = CNYDataStore(CNY_DIR)
 
 
-@st.cache_data(ttl=180)
-def load_data():
-    df = processor.parse_station_live()
-    rd = processor.build_research_dataset()
-    return df, rd
+# ══════════════════════════════════════════════════════════════
+#  資料載入（快取）
+# ══════════════════════════════════════════════════════════════
+@st.cache_data(ttl=3600)
+def load_perceived():
+    return store.load_metric_perceived()
 
 
 @st.cache_data(ttl=3600)
-def load_train_schedule():
-    """載入首末班車時間表（train_schedule.csv）"""
-    if CLOUD_MODE:
-        from datetime import datetime as _dt
-        _base = os.environ.get(
-            "GITHUB_RAW_BASE",
-            "https://raw.githubusercontent.com/Lawliet0813/TRA_-delaydata_anlze/main/data",
-        )
-        url = f"{_base}/train_schedule.csv?v={int(_dt.now().timestamp())}"
-        try:
-            return pd.read_csv(url, dtype={"TrainNo": str})
-        except Exception:
-            return pd.DataFrame()
-    local = os.path.join(DATA_DIR, "train_schedule.csv")
-    if os.path.exists(local):
-        return pd.read_csv(local, dtype={"TrainNo": str})
+def load_official():
+    return store.load_metric_official()
+
+
+@st.cache_data(ttl=3600)
+def load_threshold():
+    return store.load_threshold_sensitivity()
+
+
+@st.cache_data(ttl=3600)
+def load_inferential():
+    return store.load_inferential()
+
+
+@st.cache_data(ttl=3600)
+def load_stations_coords():
+    import pandas as pd
+
+    if os.path.exists(STATIONS_COORDS_PATH):
+        return pd.read_csv(STATIONS_COORDS_PATH, dtype={"StationID": str})
     return pd.DataFrame()
 
 
-df, research_df = load_data()
-schedule_df = load_train_schedule()
+perceived_df = load_perceived()
+official_df = load_official()
+threshold_df = load_threshold()
+inferential = load_inferential()
+stations_coords = load_stations_coords()
+
 
 # ══════════════════════════════════════════════════════════════
-#  側邊欄 / 導覽架構
+#  導覽結構
 # ══════════════════════════════════════════════════════════════
 NAV_GROUPS = [
     {
-        "label": "總覽",
+        "label": "研究總覽",
         "pages": [
             ("首頁", "⬡"),
             ("資料總覽", "◈"),
         ],
     },
     {
-        "label": "診斷",
+        "label": "描述統計",
         "pages": [
-            ("準點率分析", "◎"),
+            ("年度誤點趨勢", "≈"),
+            ("春節節點比較", "⟡"),
+            ("閾值敏感度", "◇"),
             ("車站熱力圖", "◉"),
-            ("車次追蹤", "◷"),
-            ("OLS 迴歸", "≋"),
         ],
     },
     {
-        "label": "維運",
+        "label": "推論統計",
         "pages": [
-            ("系統與資料狀態", "⚙"),
+            ("ANOVA 與卡方", "χ"),
+            ("Tukey 事後比較", "△"),
+            ("配對 t 檢定", "⇌"),
+            ("Logistic 迴歸", "≋"),
+        ],
+    },
+    {
+        "label": "方法與資料",
+        "pages": [
+            ("方法論", "✎"),
+            ("原始資料預覽", "☰"),
         ],
     },
 ]
+
 PAGE_COPY = {
-    "首頁": "研究主畫面，先看整體趨勢、目前樣態與最值得追的異常。",
-    "資料總覽": "用描述統計拆解誤點的趨勢、比較與分布。",
-    "準點率分析": "比較官方判定標準與研究判定標準，檢查準點率落差出在哪裡。",
-    "車站熱力圖": "從車站與路網空間分布理解誤點集中的區段。",
-    "車次追蹤": "追單一車次的全程表現，確認延誤如何沿線累積。",
-    "OLS 迴歸": "用可解釋的營運變數拆出風險與嚴重度的主要因素。",
-    "系統與資料狀態": "把資料中心、異常通報與爬蟲監控整合在同一個維運入口。",
+    "首頁": "春節誤點研究的核心發現、資料來源與指標定義。",
+    "資料總覽": "2022–2026 五年春節期間觀測數與結構分布。",
+    "年度誤點趨勢": "逐年平均誤點與準點率變化，觀察 2025 異常峰值。",
+    "春節節點比較": "除夕前至春節後各節點的誤點分布差異。",
+    "閾值敏感度": "改變準點判定閾值（1/3/5/10 分鐘）對 A 官方與 B 感知兩指標的衝擊。",
+    "車站熱力圖": "五年春節期間各站平均誤點的空間分布。",
+    "ANOVA 與卡方": "年份與誤點 / 準點的差異是否顯著。",
+    "Tukey 事後比較": "六個春節節點間的兩兩比較結果。",
+    "配對 t 檢定": "指標 A（終點站延誤）與指標 B（全程平均延誤）的系統性落差。",
+    "Logistic 迴歸": "在控制車種、路線、節點後，年份與節點對準點的獨立效果。",
+    "方法論": "變項定義、春節節點切分規則、資料清理流程。",
+    "原始資料預覽": "檢視 2022–2026 逐年原始 CSV 樣本。",
 }
 
-today = datetime.now().strftime("%Y-%m-%d")
-status_badge_cls = "badge-red"
-status_txt = "NO DATA"
-last_update_txt = ""
-data_source = "—"
-files_today = []
 
-if CLOUD_MODE:
-    if not df.empty:
-        last_date = str(df["Date"].max())
-        status_badge_cls = "badge-green" if last_date == today else "badge-yellow"
-        status_txt = f"雲端 · {last_date}"
-        last_update_txt = f"最後資料日期 {last_date}"
-    data_source = "GitHub Actions 雲端排程"
-else:
-    today_dir = os.path.join(DATA_DIR, "station_live", today)
-    files_today = (
-        sorted(glob.glob(os.path.join(today_dir, "*.json")))
-        if os.path.isdir(today_dir) else []
-    )
-    if files_today:
-        t_str = os.path.basename(files_today[-1]).replace(".json", "")
-        try:
-            last_dt = datetime.strptime(
-                f"{today} {t_str[:2]}:{t_str[2:4]}:{t_str[4:6]}",
-                "%Y-%m-%d %H:%M:%S",
-            )
-            mins = int((datetime.now() - last_dt).total_seconds() / 60)
-            if mins <= 5:
-                status_badge_cls, status_txt = "badge-green", f"即時 · {mins} 分鐘前"
-            elif mins <= 15:
-                status_badge_cls, status_txt = "badge-yellow", f"延遲 · {mins} 分鐘前"
-            else:
-                status_badge_cls, status_txt = "badge-red", f"中斷 · {mins} 分鐘"
-            last_update_txt = f"最後更新 {last_dt.strftime('%H:%M:%S')}"
-        except Exception:
-            status_badge_cls, status_txt = "badge-yellow", "狀態不明"
-    data_source = f"{len(files_today)} 次"
-
+# ══════════════════════════════════════════════════════════════
+#  側邊欄
+# ══════════════════════════════════════════════════════════════
 with st.sidebar:
     sidebar_brand()
 
@@ -179,27 +174,32 @@ with st.sidebar:
         unsafe_allow_html=True,
     )
 
+    meta = inferential.get("meta", {})
     st.markdown(
-        f'<span class="badge {status_badge_cls}">{status_txt}</span>',
+        '<span class="badge badge-green">展示鏡像 · 2022–2026</span>',
         unsafe_allow_html=True,
     )
-    if last_update_txt:
-        st.markdown(
-            f'<div style="font-size:0.72rem;color:{TEXT_MUTED};margin-top:4px;">'
-            f"{last_update_txt}</div>",
-            unsafe_allow_html=True,
-        )
-
-    sidebar_stats(
-        data_source=data_source,
-        total_count=len(df),
-        date_range_start=str(df["Date"].min()) if not df.empty else "—",
+    st.markdown(
+        f'<div style="font-size:0.72rem;color:{TEXT_MUTED};margin-top:4px;">'
+        f"A 官方 {meta.get('A筆數', 0):,} 筆 · B 感知 {meta.get('B筆數', 0):,} 筆"
+        "</div>",
+        unsafe_allow_html=True,
     )
 
+    sidebar_stats(
+        data_source="交通部公開資料（2022–2026 春節）",
+        total_count=len(perceived_df),
+        date_range_start="2022-01-28",
+    )
+
+
+# ══════════════════════════════════════════════════════════════
+#  標題列
+# ══════════════════════════════════════════════════════════════
 page = st.session_state.nav
 page_group = next(
     (group["label"] for group in NAV_GROUPS if any(name == page for name, _ in group["pages"])),
-    "總覽",
+    "研究總覽",
 )
 
 st.markdown(
@@ -213,18 +213,20 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-global_filter_state = render_global_filters(df)
-filtered_df, filtered_research_df = apply_global_filters(df, research_df, global_filter_state)
-_date_label = build_scope_label(global_filter_state)
+global_filter_state = render_global_filters(perceived_df)
+filtered_perceived, filtered_official = apply_global_filters(
+    perceived_df, official_df, global_filter_state
+)
+_scope_label = build_scope_label(global_filter_state)
 
 toolbar_cols = st.columns([1.0, 1.0, 0.7], gap="large")
 with toolbar_cols[0]:
     st.markdown(
         f"""
         <div class="toolbar-stat">
-            <div class="label">資料狀態</div>
-            <div class="value">{status_txt}</div>
-            <div class="meta">{last_update_txt or '等待新資料'}</div>
+            <div class="label">分析範圍</div>
+            <div class="value">{_scope_label}</div>
+            <div class="meta">五年春節合併預設</div>
         </div>
         """,
         unsafe_allow_html=True,
@@ -233,9 +235,9 @@ with toolbar_cols[1]:
     st.markdown(
         f"""
         <div class="toolbar-stat">
-            <div class="label">目前樣本</div>
-            <div class="value">{len(filtered_df):,} 筆</div>
-            <div class="meta">全資料共 {len(df):,} 筆</div>
+            <div class="label">目前樣本（B 感知）</div>
+            <div class="value">{len(filtered_perceived):,} 筆</div>
+            <div class="meta">全資料共 {len(perceived_df):,} 筆</div>
         </div>
         """,
         unsafe_allow_html=True,
@@ -246,43 +248,46 @@ with toolbar_cols[2]:
         st.cache_data.clear()
         st.rerun()
 
-render_scope_summary(global_filter_state, filtered_df)
+render_scope_summary(global_filter_state, filtered_perceived)
+
 
 # ══════════════════════════════════════════════════════════════
 #  頁面路由
 # ══════════════════════════════════════════════════════════════
-_crawl_kwargs: dict = {}
-if not CLOUD_MODE:
-    _crawl_kwargs = dict(
-        crawl_live_board=crawl_station_live,
-        crawl_alerts=crawl_alerts,
-        crawl_timetable=crawl_daily_timetable,
-        crawl_stations=crawl_stations,
-    )
+context = {
+    "perceived": filtered_perceived,
+    "official": filtered_official,
+    "perceived_all": perceived_df,
+    "official_all": official_df,
+    "threshold": threshold_df,
+    "inferential": inferential,
+    "stations_coords": stations_coords,
+    "scope_label": _scope_label,
+    "filter_state": global_filter_state,
+    "store": store,
+}
 
 if page == "首頁":
-    page_home.render(df, filtered_df=filtered_df, date_label=_date_label)
+    page_home.render(context)
 elif page == "資料總覽":
-    page_overview.render(df, filtered_df=filtered_df, date_label=_date_label)
-elif page == "準點率分析":
-    page_punctuality.render(
-        df, filtered_df=filtered_df,
-        date_label=_date_label, schedule_df=schedule_df,
-    )
+    page_overview.render(context)
+elif page == "年度誤點趨勢":
+    page_cny_trend.render(context)
+elif page == "春節節點比較":
+    page_cny_period.render(context)
+elif page == "閾值敏感度":
+    page_threshold.render(context)
 elif page == "車站熱力圖":
-    page_heatmap.render(
-        df, filtered_df=filtered_df,
-        date_label=_date_label, processor=processor,
-    )
-elif page == "車次追蹤":
-    page_train_tracker.render(filtered_df, schedule_df=schedule_df, processor=processor)
-elif page == "OLS 迴歸":
-    page_regression.render(
-        df, filtered_research_df=filtered_research_df, date_label=_date_label,
-    )
-elif page == "系統與資料狀態":
-    page_system_status.render(
-        df=df, research_df=research_df, processor=processor,
-        DATA_DIR=DATA_DIR, CLIENT_ID=CLIENT_ID, CLIENT_SECRET=CLIENT_SECRET,
-        **_crawl_kwargs,
-    )
+    page_heatmap.render(context)
+elif page == "ANOVA 與卡方":
+    page_anova_chi2.render(context)
+elif page == "Tukey 事後比較":
+    page_tukey.render(context)
+elif page == "配對 t 檢定":
+    page_paired.render(context)
+elif page == "Logistic 迴歸":
+    page_logistic.render(context)
+elif page == "方法論":
+    page_method.render(context)
+elif page == "原始資料預覽":
+    page_raw_preview.render(context)

@@ -1,177 +1,181 @@
+"""
+春節研究版全域篩選器：年份 / 春節節點 / 車種 / 路線區段。
+"""
+from __future__ import annotations
+
 import pandas as pd
 import streamlit as st
 
+from cny_processor import CNY_PERIOD_ORDER
+
 
 DEFAULTS = {
-    "global_date_filter": "全部日期",
-    "global_train_type_filter": "全部車種",
-    "global_period_filter": "全部時段",
-    "global_direction_filter": "全部方向",
-    "global_trip_line_filter": "全部線別",
+    "cny_years": [],
+    "cny_periods": [],
+    "cny_train_types": [],
+    "cny_regions": [],
 }
 
-PERIOD_ORDER = ["尖峰", "離峰", "深夜", "未知"]
-DIRECTION_LABELS = {
-    0: "順行（基→高）",
-    1: "逆行（高→基）",
-}
-TRIP_LINE_LABELS = {
-    0: "山線",
-    1: "海線",
-    2: "成追線",
-}
+TRAIN_TYPE_ORDER = [
+    "自強號 (含EMU3000)",
+    "莒光號",
+    "復興號/區間快",
+    "區間快車",
+    "區間車",
+    "對號列車(7字頭)",
+    "春節加班車",
+    "其他對號",
+    "未知",
+]
+
+REGION_ORDER = [
+    "縱貫線北段",
+    "縱貫線中段",
+    "縱貫線南段",
+    "南迴/屏東線",
+    "台東線",
+    "宜蘭/北迴線",
+    "其他",
+    "未知",
+]
 
 
 def ensure_filter_state() -> None:
     for key, value in DEFAULTS.items():
         if key not in st.session_state:
-            st.session_state[key] = value
+            st.session_state[key] = list(value)
 
 
-def _sync_option(key: str, options: list[str]) -> None:
-    if st.session_state.get(key) not in options:
-        st.session_state[key] = options[0]
-
-
-def _sorted_unique(frame: pd.DataFrame, column: str, order: list[str] | None = None) -> list[str]:
-    if frame.empty or column not in frame.columns:
+def _ordered_unique(frame: pd.DataFrame, column: str, order: list[str] | None) -> list:
+    if frame is None or frame.empty or column not in frame.columns:
         return []
-    values = [str(v).strip() for v in frame[column].dropna().tolist() if str(v).strip()]
-    unique_values = sorted(set(values))
+    values = [v for v in frame[column].dropna().unique().tolist()]
     if order:
         ranked = {name: idx for idx, name in enumerate(order)}
-        unique_values = sorted(unique_values, key=lambda item: (ranked.get(item, len(ranked)), item))
-    return unique_values
+        values = sorted(values, key=lambda item: (ranked.get(str(item), len(ranked)), str(item)))
+    else:
+        values = sorted(values)
+    return values
 
 
-def _normalize_numeric(value):
-    try:
-        return int(float(value))
-    except (TypeError, ValueError):
-        return None
-
-
-def _direction_options(frame: pd.DataFrame) -> list[str]:
-    if frame.empty or "Direction" not in frame.columns:
-        return []
-    options = []
-    for value in sorted({_normalize_numeric(v) for v in frame["Direction"].dropna().tolist()}):
-        if value is None:
-            continue
-        options.append(DIRECTION_LABELS.get(value, f"方向 {value}"))
-    return options
-
-
-def _trip_line_options(frame: pd.DataFrame) -> list[str]:
-    if frame.empty or "TripLine" not in frame.columns:
-        return []
-    options = []
-    for value in sorted({_normalize_numeric(v) for v in frame["TripLine"].dropna().tolist()}):
-        if value is None:
-            continue
-        options.append(TRIP_LINE_LABELS.get(value, f"線別 {value}"))
-    return options
-
-
-def render_global_filters(df: pd.DataFrame) -> dict[str, str]:
+def render_global_filters(df: pd.DataFrame) -> dict:
+    """在頁面頂端渲染春節四維篩選器，並回傳當前狀態字典。"""
     ensure_filter_state()
 
-    date_options = ["全部日期"] + _sorted_unique(df, "Date")[::-1]
-    train_type_options = ["全部車種"] + _sorted_unique(df, "TrainType")
-    period_options = ["全部時段"] + _sorted_unique(df, "Period", PERIOD_ORDER)
-    direction_options = ["全部方向"] + _direction_options(df)
-    trip_line_options = ["全部線別"] + _trip_line_options(df)
+    years = _ordered_unique(df, "年", None)
+    periods = _ordered_unique(df, "春節節點", CNY_PERIOD_ORDER)
+    train_types = _ordered_unique(df, "車種", TRAIN_TYPE_ORDER)
+    regions = _ordered_unique(df, "路線區段", REGION_ORDER)
 
-    _sync_option("global_date_filter", date_options)
-    _sync_option("global_train_type_filter", train_type_options)
-    _sync_option("global_period_filter", period_options)
-    _sync_option("global_direction_filter", direction_options)
-    _sync_option("global_trip_line_filter", trip_line_options)
-
-    cols = st.columns([1.35, 1.0, 1.0, 1.0, 1.0, 0.7], gap="large")
+    cols = st.columns([1.1, 1.6, 1.4, 1.4, 0.6], gap="large")
     with cols[0]:
-        st.selectbox("日期", date_options, key="global_date_filter")
+        st.multiselect(
+            "年份",
+            years,
+            default=st.session_state["cny_years"],
+            key="cny_years",
+            placeholder="全部年份",
+        )
     with cols[1]:
-        st.selectbox("車種", train_type_options, key="global_train_type_filter")
+        st.multiselect(
+            "春節節點",
+            periods,
+            default=st.session_state["cny_periods"],
+            key="cny_periods",
+            placeholder="全部節點",
+        )
     with cols[2]:
-        st.selectbox("時段", period_options, key="global_period_filter")
+        st.multiselect(
+            "車種",
+            train_types,
+            default=st.session_state["cny_train_types"],
+            key="cny_train_types",
+            placeholder="全部車種",
+        )
     with cols[3]:
-        st.selectbox("方向", direction_options, key="global_direction_filter")
+        st.multiselect(
+            "路線區段",
+            regions,
+            default=st.session_state["cny_regions"],
+            key="cny_regions",
+            placeholder="全部路線",
+        )
     with cols[4]:
-        st.selectbox("線別", trip_line_options, key="global_trip_line_filter")
-    with cols[5]:
         st.markdown("<div style='height: 1.6rem;'></div>", unsafe_allow_html=True)
         if st.button("重置", use_container_width=True):
             for key, value in DEFAULTS.items():
-                st.session_state[key] = value
+                st.session_state[key] = list(value)
             st.rerun()
 
     return {
-        "date": st.session_state["global_date_filter"],
-        "train_type": st.session_state["global_train_type_filter"],
-        "period": st.session_state["global_period_filter"],
-        "direction": st.session_state["global_direction_filter"],
-        "trip_line": st.session_state["global_trip_line_filter"],
+        "years": st.session_state["cny_years"],
+        "periods": st.session_state["cny_periods"],
+        "train_types": st.session_state["cny_train_types"],
+        "regions": st.session_state["cny_regions"],
     }
 
 
-def _filter_frame(frame: pd.DataFrame, state: dict[str, str]) -> pd.DataFrame:
-    if frame.empty:
-        return frame.copy()
-
-    filtered = frame.copy()
-    if state["date"] != "全部日期" and "Date" in filtered.columns:
-        filtered = filtered[filtered["Date"].astype(str) == state["date"]]
-    if state["train_type"] != "全部車種" and "TrainType" in filtered.columns:
-        filtered = filtered[filtered["TrainType"].astype(str) == state["train_type"]]
-    if state["period"] != "全部時段" and "Period" in filtered.columns:
-        filtered = filtered[filtered["Period"].astype(str) == state["period"]]
-    if state["direction"] != "全部方向" and "Direction" in filtered.columns:
-        direction_value = next(
-            (key for key, label in DIRECTION_LABELS.items() if label == state["direction"]),
-            None,
-        )
-        if direction_value is not None:
-            filtered = filtered[pd.to_numeric(filtered["Direction"], errors="coerce") == direction_value]
-    if state["trip_line"] != "全部線別" and "TripLine" in filtered.columns:
-        trip_line_value = next(
-            (key for key, label in TRIP_LINE_LABELS.items() if label == state["trip_line"]),
-            None,
-        )
-        if trip_line_value is not None:
-            filtered = filtered[pd.to_numeric(filtered["TripLine"], errors="coerce") == trip_line_value]
-    return filtered.copy()
-
-
 def apply_global_filters(
-    df: pd.DataFrame,
-    research_df: pd.DataFrame,
-    state: dict[str, str],
+    df_perceived: pd.DataFrame,
+    df_official: pd.DataFrame,
+    state: dict,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
-    return _filter_frame(df, state), _filter_frame(research_df, state)
+    """對感知（B）與官方（A）兩張表同時套用篩選。"""
+    from cny_processor import apply_cny_filters
+
+    perceived = apply_cny_filters(
+        df_perceived,
+        years=state.get("years") or None,
+        periods=state.get("periods") or None,
+        train_types=state.get("train_types") or None,
+        regions=state.get("regions") or None,
+    )
+    # 官方表以「路線區段_資料推導終點」作為路線欄位，需要轉欄名處理
+    if df_official is not None and not df_official.empty:
+        tmp = df_official.copy()
+        if "路線區段_資料推導終點" in tmp.columns and "路線區段" not in tmp.columns:
+            tmp["路線區段"] = tmp["路線區段_資料推導終點"]
+        official = apply_cny_filters(
+            tmp,
+            years=state.get("years") or None,
+            periods=state.get("periods") or None,
+            train_types=state.get("train_types") or None,
+            regions=state.get("regions") or None,
+        )
+    else:
+        official = df_official
+    return perceived, official
 
 
-def build_scope_label(state: dict[str, str]) -> str:
-    if state["date"] == "全部日期":
-        return "📅 全部日期"
-    return f"📅 {state['date']}"
+def build_scope_label(state: dict) -> str:
+    if state.get("years"):
+        return "📅 " + "、".join(str(y) for y in state["years"])
+    return "📅 2022–2026 合併"
 
 
-def render_scope_summary(state: dict[str, str], filtered_df: pd.DataFrame) -> None:
+def render_scope_summary(state: dict, filtered_df: pd.DataFrame) -> None:
     pills = []
-    for value in state.values():
-        if value.startswith("全部"):
-            continue
-        pills.append(f'<span class="scope-pill">{value}</span>')
+    if state.get("years"):
+        pills.append(f'<span class="scope-pill">年份：{"、".join(str(y) for y in state["years"])}</span>')
+    if state.get("periods"):
+        for p in state["periods"]:
+            pills.append(f'<span class="scope-pill">{p}</span>')
+    if state.get("train_types"):
+        for t in state["train_types"]:
+            pills.append(f'<span class="scope-pill">{t}</span>')
+    if state.get("regions"):
+        for r in state["regions"]:
+            pills.append(f'<span class="scope-pill">{r}</span>')
     if not pills:
-        pills.append('<span class="scope-pill">全樣本</span>')
+        pills.append('<span class="scope-pill">五年全樣本</span>')
 
+    count = len(filtered_df) if filtered_df is not None else 0
     st.markdown(
         f"""
         <div class="scope-strip">
             <div>
                 <div class="eyebrow">目前分析範圍</div>
-                <div class="headline">目前條件下共有 {len(filtered_df):,} 筆觀測值</div>
+                <div class="headline">目前條件下共有 {count:,} 筆觀測值</div>
             </div>
             <div class="pills">{''.join(pills)}</div>
         </div>
